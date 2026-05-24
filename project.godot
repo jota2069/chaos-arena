@@ -11,8 +11,15 @@ config_version=5
 [application]
 
 config/name="ChaosArena"
-config/features=PackedStringArray("4.6", "GL Compatibility")
+run/main_scene="uid://t3flh0ky16k2"
+config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[autoload]
+
+EventBus="*uid://b0ktmg31vijf6"
+GameManager="*uid://bxn4q2c2pvo76"
+EconomyManager="*uid://c8q52gweyok36"
 
 [dotnet]
 
