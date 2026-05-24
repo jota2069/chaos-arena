@@ -2,8 +2,12 @@
 
 [ext_resource type="Script" uid="uid://rwsaaqwv6c2o" path="res://Main.cs" id="1_glv2v"]
 [ext_resource type="PackedScene" uid="uid://b0idaag6co4fs" path="res://entities/player/LocalPlayer.tscn" id="2_uu6xs"]
+[ext_resource type="PackedScene" uid="uid://dorytj71ig3e2" path="res://entities/enemies/BasicEnemy.tscn" id="3_r0du0"]
 
 [node name="Node2D" type="Node2D" unique_id=954741575]
 script = ExtResource("1_glv2v")
 
 [node name="LocalPlayer" parent="." unique_id=2032481076 instance=ExtResource("2_uu6xs")]
+
+[node name="BasicEnemy" parent="." unique_id=1531077558 instance=ExtResource("3_r0du0")]
+position = Vector2(400, 300)

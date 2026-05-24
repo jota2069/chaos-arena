@@ -12,20 +12,15 @@ public partial class LocalPlayer : PlayerBase
 
     public override void _PhysicsProcess(double delta)
     {
-        Vector2 direction = GetInputDirection();
+        if (IsDead) return;
+        Vector2 direction = Input.GetVector("move_left", "move_right", "move_up", "move_down");
         Velocity = direction * MoveSpeed;
         MoveAndSlide();
     }
 
     private Vector2 GetInputDirection()
     {
-        Vector2 dir = Vector2.Zero;
-
-        if (Input.IsActionPressed("ui_right")) dir.X += 1f;
-        if (Input.IsActionPressed("ui_left"))  dir.X -= 1f;
-        if (Input.IsActionPressed("ui_down"))  dir.Y += 1f;
-        if (Input.IsActionPressed("ui_up"))    dir.Y -= 1f;
-
-        return dir.Normalized();
+        return Input.GetVector("move_left", "move_right", "move_up", "move_down");
     }
+    
 }

@@ -24,6 +24,8 @@ public abstract partial class PlayerBase : CharacterBody2D
         _eventBus = GetNode<EventBus>("/root/EventBus");
         OnReady();
     }
+    
+    public bool IsDead { get; private set; } = false;
 
     // Дочерние классы переопределяют для своей инициализации
     protected virtual void OnReady() { }
@@ -33,15 +35,13 @@ public abstract partial class PlayerBase : CharacterBody2D
     /// </summary>
     public void TakeDamage(float amount)
     {
-        CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
-        GD.Print($"Игрок {PlayerId}: получил {amount} урона. HP: {CurrentHealth}/{MaxHealth}");
+        if (IsDead) return; // не получаем урон после смерти
 
+        CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
         _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
 
         if (CurrentHealth <= 0f)
-        {
             Die();
-        }
     }
 
     /// <summary>
@@ -65,7 +65,14 @@ public abstract partial class PlayerBase : CharacterBody2D
 
     private void Die()
     {
+        if (IsDead) return; // защита от двойного вызова
+        IsDead = true;
         GD.Print($"Игрок {PlayerId}: погиб");
         _eventBus.EmitSignal(EventBus.SignalName.PlayerDied, PlayerId);
+    
+        // Скрываем игрока пока нет системы возрождения
+        Visible = false;
+        SetProcess(false);
+        SetPhysicsProcess(false);
     }
 }
