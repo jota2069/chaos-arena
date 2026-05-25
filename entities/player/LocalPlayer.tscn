@@ -1,9 +1,10 @@
 [gd_scene format=3 uid="uid://b0idaag6co4fs"]
 
 [ext_resource type="Script" uid="uid://ccs6t7gl74gh0" path="res://entities/player/LocalPlayer.cs" id="1_7a2jn"]
-[ext_resource type="Texture2D" uid="uid://dir4whulonyf7" path="res://icon.svg" id="2_kqvpx"]
+[ext_resource type="Texture2D" uid="uid://dijxw6pg1qcgh" path="res://assets/player.png" id="2_7a2jn"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_g2sw8"]
+size = Vector2(12, 12)
 
 [node name="LocalPlayer" type="CharacterBody2D" unique_id=2032481076 groups=["players"]]
 motion_mode = 1
@@ -13,4 +14,8 @@ script = ExtResource("1_7a2jn")
 shape = SubResource("RectangleShape2D_g2sw8")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=391177421]
-texture = ExtResource("2_kqvpx")
+scale = Vector2(0.1, 0.1)
+texture = ExtResource("2_7a2jn")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=298686031]
+zoom = Vector2(2, 2)
