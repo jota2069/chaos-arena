@@ -2,10 +2,8 @@
 
 [ext_resource type="Script" uid="uid://rwsaaqwv6c2o" path="res://Main.cs" id="1_glv2v"]
 [ext_resource type="PackedScene" uid="uid://b0idaag6co4fs" path="res://entities/player/LocalPlayer.tscn" id="2_uu6xs"]
-[ext_resource type="PackedScene" uid="uid://dorytj71ig3e2" path="res://entities/enemies/BasicEnemy.tscn" id="3_r0du0"]
 [ext_resource type="Texture2D" uid="uid://bmmh1xljehhgh" path="res://assets/Tilemap/tilemap_packed.png" id="4_fos0i"]
 [ext_resource type="Script" uid="uid://cw0jbnrhicf5v" path="res://scenes/MapGenerator.cs" id="5_3dxm6"]
-[ext_resource type="Script" uid="uid://c70spl8162rrh" path="res://scenes/TileDebugger.cs" id="6_3dxm6"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_lgr22"]
 texture = ExtResource("4_fos0i")
@@ -50,6 +48,7 @@ texture = ExtResource("4_fos0i")
 2:3/0 = 0
 3:3/0 = 0
 4:3/0 = 0
+4:3/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 5:3/0 = 0
 6:3/0 = 0
 7:3/0 = 0
@@ -67,8 +66,11 @@ texture = ExtResource("4_fos0i")
 7:4/0 = 0
 8:4/0 = 0
 9:4/0 = 0
+9:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 10:4/0 = 0
+10:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 11:4/0 = 0
+11:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 0:5/0 = 0
 1:5/0 = 0
 2:5/0 = 0
@@ -153,11 +155,6 @@ script = ExtResource("1_glv2v")
 tile_set = SubResource("TileSet_trn2v")
 script = ExtResource("5_3dxm6")
 
+[node name="PlayerSpawn" type="Marker2D" parent="." unique_id=24286143]
+
 [node name="LocalPlayer" parent="." unique_id=2032481076 instance=ExtResource("2_uu6xs")]
-
-[node name="BasicEnemy" parent="." unique_id=1531077558 instance=ExtResource("3_r0du0")]
-position = Vector2(400, 300)
-
-[node name="TileDebugger" type="Node2D" parent="." unique_id=752684584 node_paths=PackedStringArray("TileMap")]
-script = ExtResource("6_3dxm6")
-TileMap = NodePath("../Map")
