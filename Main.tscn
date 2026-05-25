@@ -143,6 +143,7 @@ texture = ExtResource("4_fos0i")
 11:10/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_trn2v"]
+physics_layer_0/collision_layer = 1
 sources/0 = SubResource("TileSetAtlasSource_lgr22")
 
 [node name="Node2D" type="Node2D" unique_id=954741575]
