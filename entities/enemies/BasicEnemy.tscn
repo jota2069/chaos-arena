@@ -1,9 +1,10 @@
 [gd_scene format=3 uid="uid://dorytj71ig3e2"]
 
 [ext_resource type="Script" uid="uid://dk04rsp600f64" path="res://entities/enemies/BasicEnemy.cs" id="1_dx6gi"]
-[ext_resource type="Texture2D" uid="uid://dir4whulonyf7" path="res://icon.svg" id="2_x56oo"]
+[ext_resource type="Texture2D" uid="uid://b15setioy7c8k" path="res://assets/enemy.png" id="2_dx6gi"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_6mkkv"]
+size = Vector2(12, 12)
 
 [node name="BasicEnemy" type="CharacterBody2D" unique_id=1531077558]
 script = ExtResource("1_dx6gi")
@@ -12,4 +13,5 @@ script = ExtResource("1_dx6gi")
 shape = SubResource("RectangleShape2D_6mkkv")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=45959719]
-texture = ExtResource("2_x56oo")
+scale = Vector2(0.1, 0.1)
+texture = ExtResource("2_dx6gi")
