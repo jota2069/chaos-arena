@@ -22,6 +22,10 @@ public abstract partial class PlayerBase : CharacterBody2D
     {
         CurrentHealth = MaxHealth;
         _eventBus = GetNode<EventBus>("/root/EventBus");
+    
+        // ДЕБАГ: Проверяем ID инстанса
+        GD.Print($"[PlayerBase] EventBus: {_eventBus.GetInstanceId()}");
+    
         OnReady();
     }
     
@@ -35,9 +39,13 @@ public abstract partial class PlayerBase : CharacterBody2D
     /// </summary>
     public void TakeDamage(float amount)
     {
-        if (IsDead) return; // не получаем урон после смерти
+        if (IsDead) return;
 
         CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
+    
+        // ДЕБАГ: Проверяем, что происходит в момент получения урона
+        GD.Print($"[PlayerBase] TakeDamage: {amount}, HP: {CurrentHealth}, эмитируем сигнал для playerId={PlayerId}");
+    
         _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
 
         if (CurrentHealth <= 0f)

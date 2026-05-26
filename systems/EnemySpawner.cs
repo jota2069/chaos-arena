@@ -7,10 +7,12 @@ namespace ChaosArena.systems
     public partial class EnemySpawner : Node2D
     {
         [Export] public PackedScene EnemyScene;
-        [Export] public int MinPerWave = 3;
-        [Export] public int MaxPerWave = 7;
+        
+        // ПРАВКА: Временный баланс для тестов, чтобы не умирать мгновенно
+        [Export] public int MinPerWave = 2;
+        [Export] public int MaxPerWave = 4;
         [Export] public float WaveInterval = 12f;
-        [Export] public int MaxEnemies = 15;
+        [Export] public int MaxEnemies = 8;
 
         private List<Vector2> _spawnPositions = new();
         private int _activeEnemies = 0;
@@ -20,10 +22,15 @@ namespace ChaosArena.systems
         public void SetSpawnPoints(List<Vector2> positions)
         {
             _spawnPositions = positions;
-            _timer = WaveInterval;
+            _timer = 0f; 
             _spawning = _spawnPositions.Count > 0;
             
             GD.Print($"[EnemySpawner] Точки получены ({_spawnPositions.Count}). Активация.");
+            
+            if (_spawning)
+            {
+                SpawnWave();
+            }
         }
 
         public override void _Process(double delta)

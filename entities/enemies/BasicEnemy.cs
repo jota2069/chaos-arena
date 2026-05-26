@@ -9,6 +9,9 @@ namespace ChaosArena.entities.enemies
 
         private PlayerBase _target;
         private Vector2 _knockbackVelocity = Vector2.Zero;
+        
+        private float _attackCooldown = 0f;
+        private const float AttackInterval = 0.8f;
 
         public override void _Ready()
         {
@@ -27,16 +30,23 @@ namespace ChaosArena.entities.enemies
         private void UpdateTarget()
         {
             var players = GetTree().GetNodesInGroup("players");
-            if (players.Count > 0)
+            PlayerBase closest = null;
+            float minDist = float.MaxValue;
+            
+            foreach (var node in players)
             {
-                var player = players[0] as PlayerBase;
-                if (player != null && !player.IsDead)
+                if (node is PlayerBase p && !p.IsDead)
                 {
-                    _target = player;
-                    return;
+                    // Оптимальный поиск через квадрат расстояния
+                    float d = GlobalPosition.DistanceSquaredTo(p.GlobalPosition);
+                    if (d < minDist)
+                    {
+                        minDist = d;
+                        closest = p;
+                    }
                 }
             }
-            _target = null;
+            _target = closest;
         }
 
         public override void _PhysicsProcess(double delta)
@@ -44,6 +54,10 @@ namespace ChaosArena.entities.enemies
             if (IsDead) return;
 
             float dt = (float)delta;
+            
+            // 1. ПРАВКА: Кулдаун тикает всегда, независимо от дистанции до игрока
+            _attackCooldown = Mathf.Max(0f, _attackCooldown - dt);
+            
             Vector2 moveVelocity = Vector2.Zero;
 
             if (_target != null && IsInstanceValid(_target) && !_target.IsDead)
@@ -63,7 +77,11 @@ namespace ChaosArena.entities.enemies
                 float distance = GlobalPosition.DistanceTo(_target.GlobalPosition);
                 if (distance < AttackRange)
                 {
-                    _target.TakeDamage(ContactDamage * dt);
+                    if (_attackCooldown <= 0f)
+                    {
+                        _target.TakeDamage(ContactDamage);
+                        _attackCooldown = AttackInterval;
+                    }
                 }
             }
 
@@ -81,6 +99,9 @@ namespace ChaosArena.entities.enemies
             if (IsDead || amount <= 0) return;
 
             base.TakeDamage(amount);
+            
+            // 2. ПРАВКА: Защита от мёртвого узла (если базовый Die() уже сработал)
+            if (IsDead) return; 
 
             // Если есть цель — отлетаем в противоположную от нее сторону
             if (_target != null && IsInstanceValid(_target))

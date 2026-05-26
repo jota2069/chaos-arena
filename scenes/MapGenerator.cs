@@ -36,8 +36,13 @@ namespace ChaosArena.scenes
         
         private void NotifySpawner()
         {
+            // ИСПРАВЛЕНИЕ: Путь изменен на /root/Main/EnemySpawner согласно Main.tscn
             var spawner = GetNodeOrNull<EnemySpawner>("/root/Main/EnemySpawner");
-            if (spawner == null) return;
+            if (spawner == null)
+            {
+                GD.PrintErr("[MapGenerator] EnemySpawner не найден!");
+                return;
+            }
 
             List<Vector2> roomCenters = new();
     
@@ -47,6 +52,7 @@ namespace ChaosArena.scenes
                 roomCenters.Add(worldPos);
             }
 
+            GD.Print($"[MapGenerator] Передаю {roomCenters.Count} точек спавна");
             spawner.SetSpawnPoints(roomCenters);
         }
 
@@ -129,7 +135,6 @@ namespace ChaosArena.scenes
             }
         }
 
-        // Широкий коридор: 3 тайла (center ± 1)
         private void CarveHorizontal(int fromX, int toX, int y)
         {
             int min = Mathf.Min(fromX, toX);
@@ -204,6 +209,7 @@ namespace ChaosArena.scenes
             }
         }
 
+        // Возвращена структура Room, которую мы случайно затёрли
         private readonly struct Room
         {
             public readonly int X;

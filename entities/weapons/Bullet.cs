@@ -18,6 +18,10 @@ namespace ChaosArena.entities.weapons
 
         public override void _Ready()
         {
+            CollisionLayer = 2;
+            CollisionMask = 1 | 4;
+
+            
             BodyEntered += OnBodyEntered;
             AreaEntered += OnAreaEntered;
             
@@ -42,7 +46,8 @@ namespace ChaosArena.entities.weapons
 
         private void OnAreaEntered(Area2D area)
         {
-            if (area.GetParent() is EnemyBase enemy)
+            // Хитбокс врага — его родитель EnemyBase
+            if (area.IsInGroup("enemy_hitboxes") && area.GetParent() is EnemyBase enemy)
             {
                 enemy.TakeDamage(Damage);
                 QueueFree();
