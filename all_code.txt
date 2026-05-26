@@ -1,0 +1,1298 @@
+
+=== FILE: ./entities/player/LocalPlayer.cs ===
+using Godot;
+using ChaosArena.entities.weapons;
+
+namespace ChaosArena.entities.player
+{
+    public partial class LocalPlayer : PlayerBase
+    {
+        // Путь к сцене пули
+        private readonly PackedScene _bulletScene = 
+            GD.Load<PackedScene>("res://entities/weapons/Bullet.tscn");
+
+        // Задержка между выстрелами
+        private float _shootCooldown;
+        private const float ShootDelay = 0.3f;
+
+        // Анимация
+        private Sprite2D _sprite;
+        private Sprite2D _shadow;
+        private CpuParticles2D _dust;
+        private float _animTime;
+        private Vector2 _lastDirection = Vector2.Right;
+
+        protected override void OnReady()
+        {
+            AddToGroup("players");
+            GD.Print($"LocalPlayer {PlayerId}: готов");
+            
+            _sprite = GetNode<Sprite2D>("Sprite2D");
+            
+            // Создаем тень программно
+            _shadow = new Sprite2D();
+            _shadow.Texture = CreateShadowTexture();
+            _shadow.Position = new Vector2(0, 8);
+            _shadow.Scale = new Vector2(0.8f, 0.3f);
+            _shadow.Modulate = new Color(0, 0, 0, 0.3f);
+            _shadow.ZIndex = -1;
+            AddChild(_shadow);
+            
+            // Создаем частицы пыли программно
+            _dust = new CpuParticles2D();
+            _dust.Position = new Vector2(0, 6);
+            _dust.Amount = 8;
+            _dust.Lifetime = 0.3f;
+            _dust.OneShot = true;
+            _dust.Explosiveness = 0.5f;
+            _dust.Direction = new Vector2(0, -1);
+            _dust.Spread = 30f;
+            _dust.Gravity = new Vector2(0, 50);
+            _dust.InitialVelocityMin = 20f;
+            _dust.InitialVelocityMax = 40f;
+            _dust.ScaleAmountMin = 0.5f;
+            _dust.ScaleAmountMax = 1f;
+            _dust.Modulate = new Color(0.8f, 0.7f, 0.6f, 0.6f);
+            _dust.Emitting = false;
+            AddChild(_dust);
+        }
+
+        public override void _PhysicsProcess(double delta)
+        {
+            if (IsDead) return;
+
+            float dt = (float)delta;
+
+            // Движение
+            Vector2 direction = Input.GetVector("move_left", "move_right", "move_up", "move_down");
+            Velocity = direction * MoveSpeed;
+            MoveAndSlide();
+            
+            UpdateAnimation(direction, dt);
+            
+            // Фиксация посоха в руке
+            var wandHolder = GetNodeOrNull<Marker2D>("Sprite2D/WandHolder");
+            if (wandHolder != null && _sprite != null)
+            {
+                Vector2 mousePos = GetGlobalMousePosition();
+                bool mouseRight = mousePos.X > GlobalPosition.X;
+                
+                // 1. Зеркалим персонажа в сторону мыши
+                float baseScale = Mathf.Abs(_sprite.Scale.Y);
+                _sprite.Scale = new Vector2(mouseRight ? baseScale : -baseScale, _sprite.Scale.Y);
+                
+                // 2. Позиция WandHolder в координатах спрайта
+                wandHolder.Position = new Vector2(231f, 20f);
+                
+                // 3. Сбрасываем вращение холдера, чтобы он наследовал только покачивание тела
+                wandHolder.Rotation = 0f;
+                wandHolder.Scale = new Vector2(1f, 1f);
+            }
+
+            // Стрельба
+            _shootCooldown -= dt;
+            if (Input.IsActionPressed("shoot") && _shootCooldown <= 0f)
+            {
+                Shoot();
+                _shootCooldown = ShootDelay;
+            }
+        }
+
+        private void UpdateAnimation(Vector2 direction, float delta)
+        {
+            if (_sprite == null) return;
+
+            if (direction != Vector2.Zero)
+            {
+                _lastDirection = direction;
+                _animTime += delta * 15f;
+                
+                float targetRotation = direction.X * 0.2f;
+                _sprite.Rotation = Mathf.Lerp(_sprite.Rotation, targetRotation, 10f * delta);
+                
+                float bounce = Mathf.Abs(Mathf.Sin(_animTime)) * 3f;
+                _sprite.Position = new Vector2(0, -bounce);
+                
+                float pulse = 1f + Mathf.Abs(Mathf.Sin(_animTime * 2f)) * 0.05f;
+                float signX = Mathf.Sign(_sprite.Scale.X);
+                _sprite.Scale = new Vector2(signX * pulse * 0.1f, pulse * 0.1f);
+                
+                if (_dust != null && Mathf.Sin(_animTime) > 0.95f)
+                    _dust.Emitting = true;
+            }
+            else
+            {
+                _animTime = 0f;
+                _sprite.Rotation = Mathf.Lerp(_sprite.Rotation, 0f, 10f * delta);
+                _sprite.Position = Vector2.Zero;
+                
+                float breathe = 1f + Mathf.Sin((float)Time.GetTicksMsec() / 200f) * 0.02f;
+                float signX = Mathf.Sign(_sprite.Scale.X);
+                _sprite.Scale = new Vector2(signX * breathe * 0.1f, breathe * 0.1f);
+            }
+        }
+
+        private void Shoot()
+        {
+            if (_bulletScene == null) return;
+
+            var wandHolder = GetNodeOrNull<Marker2D>("Sprite2D/WandHolder");
+            Vector2 spawnPos = GlobalPosition;
+            Vector2 mousePos = GetGlobalMousePosition();
+
+            if (wandHolder != null && _sprite != null)
+            {
+                // Снаряд спавнится четко из глобальной позиции холдера
+                spawnPos = wandHolder.GlobalPosition;
+            }
+
+            Vector2 direction = (mousePos - spawnPos).Normalized();
+
+            var bullet = _bulletScene.Instantiate<Bullet>();
+            bullet.GlobalPosition = spawnPos;
+            bullet.Init(direction);
+
+            GetTree().Root.AddChild(bullet);
+        }
+
+        private Texture2D CreateShadowTexture()
+        {
+            var image = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
+            for (int x = 0; x < 16; x++)
+            {
+                for (int y = 0; y < 16; y++)
+                {
+                    float dx = (x - 8) / 8f;
+                    float dy = (y - 8) / 4f;
+                    if (dx * dx + dy * dy <= 1f)
+                        image.SetPixel(x, y, new Color(0, 0, 0, 0.5f));
+                }
+            }
+            return ImageTexture.CreateFromImage(image);
+        }
+    }
+}
+=== FILE: ./entities/player/PlayerBase.cs ===
+using Godot;
+
+/// <summary>
+/// Базовый класс игрока. Содержит общую логику HP и оружия.
+/// LocalPlayer и RemotePlayer наследуются от него.
+/// </summary>
+public abstract partial class PlayerBase : CharacterBody2D
+{
+    [Export] public float MaxHealth = 100f;
+    [Export] public float MoveSpeed = 200f;
+    [Export] public int PlayerId = 0;
+
+    public float CurrentHealth { get; private set; }
+
+    // Два слота оружия: 0 = фарм (PvE), 1 = дуэль (PvP)
+    protected WeaponBase[] Weapons = new WeaponBase[2];
+    protected int ActiveWeaponSlot = 0;
+
+    private EventBus _eventBus;
+
+    public override void _Ready()
+    {
+        CurrentHealth = MaxHealth;
+        _eventBus = GetNode<EventBus>("/root/EventBus");
+        OnReady();
+    }
+    
+    public bool IsDead { get; private set; } = false;
+
+    // Дочерние классы переопределяют для своей инициализации
+    protected virtual void OnReady() { }
+
+    /// <summary>
+    /// Наносит урон игроку.
+    /// </summary>
+    public void TakeDamage(float amount)
+    {
+        if (IsDead) return; // не получаем урон после смерти
+
+        CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
+        _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
+
+        if (CurrentHealth <= 0f)
+            Die();
+    }
+
+    /// <summary>
+    /// Лечит игрока.
+    /// </summary>
+    public void Heal(float amount)
+    {
+        CurrentHealth = Mathf.Min(MaxHealth, CurrentHealth + amount);
+        _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
+    }
+
+    /// <summary>
+    /// Переключает активный слот оружия (0 или 1).
+    /// </summary>
+    public void SwitchWeapon(int slot)
+    {
+        if (slot < 0 || slot > 1) return;
+        ActiveWeaponSlot = slot;
+        GD.Print($"Игрок {PlayerId}: переключился на слот {slot}");
+    }
+
+    private void Die()
+    {
+        if (IsDead) return; // защита от двойного вызова
+        IsDead = true;
+        GD.Print($"Игрок {PlayerId}: погиб");
+        _eventBus.EmitSignal(EventBus.SignalName.PlayerDied, PlayerId);
+    
+        // Скрываем игрока пока нет системы возрождения
+        Visible = false;
+        SetProcess(false);
+        SetPhysicsProcess(false);
+    }
+}
+=== FILE: ./entities/player/LocalPlayer.tscn ===
+[gd_scene format=3 uid="uid://b0idaag6co4fs"]
+
+[ext_resource type="Script" uid="uid://ccs6t7gl74gh0" path="res://entities/player/LocalPlayer.cs" id="1_7a2jn"]
+[ext_resource type="Texture2D" uid="uid://dijxw6pg1qcgh" path="res://assets/player.png" id="2_7a2jn"]
+[ext_resource type="Texture2D" uid="uid://c76f01y2swcm8" path="res://assets/wand.png" id="3_kqvpx"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_g2sw8"]
+size = Vector2(12, 12)
+
+[node name="LocalPlayer" type="CharacterBody2D" unique_id=2032481076 groups=["players"]]
+motion_mode = 1
+script = ExtResource("1_7a2jn")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=929863311]
+shape = SubResource("RectangleShape2D_g2sw8")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=391177421]
+scale = Vector2(0.1, 0.1)
+texture = ExtResource("2_7a2jn")
+
+[node name="WandHolder" type="Marker2D" parent="Sprite2D" unique_id=1526685526]
+position = Vector2(50, 20)
+
+[node name="Wand" type="Sprite2D" parent="Sprite2D/WandHolder" unique_id=999999999]
+scale = Vector2(0.5, 0.5)
+texture = ExtResource("3_kqvpx")
+offset = Vector2(-8, 0)
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=298686031]
+zoom = Vector2(2, 2)
+
+=== FILE: ./entities/weapons/Bullet.cs ===
+using Godot;
+using ChaosArena.entities.enemies;
+
+namespace ChaosArena.entities.weapons
+{
+    public partial class Bullet : Area2D
+    {
+        [Export] public float Speed = 300f;
+        [Export] public float Damage = 10f;
+        [Export] public float Lifetime = 2f;
+
+        private Vector2 _direction;
+
+        public void Init(Vector2 direction)
+        {
+            _direction = direction.Normalized();
+        }
+
+        public override void _Ready()
+        {
+            BodyEntered += OnBodyEntered;
+            AreaEntered += OnAreaEntered;
+            
+            // Автоудаление по таймеру
+            var timer = GetTree().CreateTimer(Lifetime);
+            timer.Timeout += QueueFree;
+        }
+
+        public override void _PhysicsProcess(double delta)
+        {
+            Position += _direction * Speed * (float)delta;
+        }
+
+        private void OnBodyEntered(Node2D body)
+        {
+            if (body is EnemyBase enemy)
+            {
+                enemy.TakeDamage(Damage);
+                QueueFree();
+            }
+        }
+
+        private void OnAreaEntered(Area2D area)
+        {
+            if (area.GetParent() is EnemyBase enemy)
+            {
+                enemy.TakeDamage(Damage);
+                QueueFree();
+            }
+        }
+    }
+}
+=== FILE: ./entities/weapons/Bullet.tscn ===
+[gd_scene format=3 uid="uid://gekx0mvm834a"]
+
+[ext_resource type="Script" uid="uid://b3yhjjes1ohx8" path="res://entities/weapons/Bullet.cs" id="1_mt7h7"]
+[ext_resource type="Texture2D" uid="uid://d3gwvxb8hsajr" path="res://assets/bullet.png" id="2_6qime"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_xctfd"]
+radius = 3.0
+
+[node name="Bullet" type="Area2D" unique_id=472241215]
+script = ExtResource("1_mt7h7")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1098231563]
+shape = SubResource("CircleShape2D_xctfd")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=133175266]
+scale = Vector2(0.05, 0.05)
+texture = ExtResource("2_6qime")
+
+=== FILE: ./entities/weapons/WeaponBase.cs ===
+using Godot;
+
+/// <summary>
+/// Базовый класс оружия. Заглушка — будет расширена позже.
+/// </summary>
+public abstract partial class WeaponBase : Node2D
+{
+    [Export] public string WeaponName = "Без названия";
+    [Export] public float Damage = 10f;
+
+    /// <summary>
+    /// Возвращает урон с учётом текущей фазы игры.
+    /// PvE-оружие наносит больше урона мобам, PvP-оружие — игрокам.
+    /// </summary>
+    public virtual float GetDamage(GameManager.GamePhase phase)
+    {
+        return Damage;
+    }
+
+    /// <summary>
+    /// Выстрел / удар. Реализуется в наследниках.
+    /// </summary>
+    public virtual void Fire(Vector2 direction) { }
+}
+=== FILE: ./entities/enemies/EnemyBase.cs ===
+using Godot;
+
+namespace ChaosArena.entities.enemies
+{
+    public abstract partial class EnemyBase : CharacterBody2D
+    {
+        [Export] public float MaxHealth = 30f;
+        [Export] public float MoveSpeed = 80f;
+        [Export] public int MinReward = 5;
+        [Export] public int MaxReward = 15;
+
+        public float CurrentHealth { get; private set; }
+        public bool IsDead { get; private set; }
+
+        // Элементы для дочерних классов
+        protected Sprite2D Sprite;
+        private EventBus _eventBus;
+
+        public override void _Ready()
+        {
+            CurrentHealth = MaxHealth;
+            IsDead = false;
+            
+            // Находим спрайт внутри сцены врага
+            Sprite = GetNodeOrNull<Sprite2D>("Sprite2D");
+            _eventBus = GetNode<EventBus>("/root/EventBus");
+            
+            OnReady();
+        }
+
+        protected virtual void OnReady() { }
+
+        // Добавлено virtual, чтобы BasicEnemy мог его переопределить через override
+        public virtual void TakeDamage(float amount)
+        {
+            if (IsDead || amount <= 0) return;
+            
+            CurrentHealth -= amount;
+            GD.Print($"[Enemy] HP: {CurrentHealth}/{MaxHealth}");
+            
+            // Эффект мигания при получении урона
+            if (Sprite != null)
+            {
+                var tween = CreateTween();
+                tween.TweenProperty(Sprite, "modulate", new Color(1, 0, 0), 0.1f);
+                tween.TweenProperty(Sprite, "modulate", new Color(1, 1, 1), 0.1f);
+            }
+            
+            if (CurrentHealth <= 0f)
+                Die();
+        }
+
+        private void Die()
+        {
+            if (IsDead) return;
+            IsDead = true;
+            
+            int reward = GD.RandRange(MinReward, MaxReward);
+            _eventBus.EmitSignal(EventBus.SignalName.EnemyDied, GlobalPosition, reward);
+            GD.Print($"[Enemy] Died, reward: {reward}");
+            
+            QueueFree();
+        }
+    }
+}
+=== FILE: ./entities/enemies/BasicEnemy.cs ===
+using Godot;
+
+namespace ChaosArena.entities.enemies
+{
+    public partial class BasicEnemy : EnemyBase
+    {
+        [Export] public float ContactDamage = 10f;
+        [Export] public float AttackRange = 24f;
+
+        private PlayerBase _target;
+        private Vector2 _knockbackVelocity = Vector2.Zero;
+
+        public override void _Ready()
+        {
+            base._Ready();
+            
+            // Обновляем цель раз в секунду (безопасно для памяти и производительности)
+            var timer = new Timer();
+            timer.WaitTime = 1f;
+            timer.Autostart = true;
+            timer.Timeout += UpdateTarget;
+            AddChild(timer);
+            
+            UpdateTarget();
+        }
+
+        private void UpdateTarget()
+        {
+            var players = GetTree().GetNodesInGroup("players");
+            if (players.Count > 0)
+            {
+                var player = players[0] as PlayerBase;
+                if (player != null && !player.IsDead)
+                {
+                    _target = player;
+                    return;
+                }
+            }
+            _target = null;
+        }
+
+        public override void _PhysicsProcess(double delta)
+        {
+            if (IsDead) return;
+
+            float dt = (float)delta;
+            Vector2 moveVelocity = Vector2.Zero;
+
+            if (_target != null && IsInstanceValid(_target) && !_target.IsDead)
+            {
+                // Направление к игроку
+                Vector2 direction = (_target.GlobalPosition - GlobalPosition).Normalized();
+                moveVelocity = direction * MoveSpeed;
+
+                // Поворот спрайта врага в сторону движения
+                if (Sprite != null && Mathf.Abs(direction.X) > 0.05f)
+                {
+                    float baseScale = Mathf.Abs(Sprite.Scale.Y);
+                    Sprite.Scale = new Vector2(direction.X > 0 ? baseScale : -baseScale, baseScale);
+                }
+
+                // Нанесение урона игроку вблизи
+                float distance = GlobalPosition.DistanceTo(_target.GlobalPosition);
+                if (distance < AttackRange)
+                {
+                    _target.TakeDamage(ContactDamage * dt);
+                }
+            }
+
+            // Плавно гасим импульс отбрасывания (Knockback)
+            _knockbackVelocity = _knockbackVelocity.Lerp(Vector2.Zero, 10f * dt);
+
+            // Итоговая скорость: движение + отбрасывание от пуль
+            Velocity = moveVelocity + _knockbackVelocity;
+            MoveAndSlide();
+        }
+
+        // Переопределяем метод получения урона из базового класса, чтобы добавить отбрасывание
+        public override void TakeDamage(float amount)
+        {
+            if (IsDead || amount <= 0) return;
+
+            base.TakeDamage(amount);
+
+            // Если есть цель — отлетаем в противоположную от нее сторону
+            if (_target != null && IsInstanceValid(_target))
+            {
+                Vector2 pushDirection = (GlobalPosition - _target.GlobalPosition).Normalized();
+                _knockbackVelocity = pushDirection * 180f; // Сила отбрасывания
+            }
+        }
+    }
+}
+=== FILE: ./entities/enemies/BasicEnemy.tscn ===
+[gd_scene format=3 uid="uid://dorytj71ig3e2"]
+
+[ext_resource type="Script" uid="uid://dk04rsp600f64" path="res://entities/enemies/BasicEnemy.cs" id="1_dx6gi"]
+[ext_resource type="Texture2D" uid="uid://b15setioy7c8k" path="res://assets/enemy.png" id="2_dx6gi"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_6mkkv"]
+size = Vector2(12, 12)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
+size = Vector2(14, 14)
+
+[node name="BasicEnemy" type="CharacterBody2D"]
+script = ExtResource("1_dx6gi")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_6mkkv")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(0.1, 0.1)
+texture = ExtResource("2_dx6gi")
+
+[node name="Hitbox" type="Area2D" parent="." groups=["enemy_hitboxes"]]
+collision_layer = 4
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hitbox"]
+shape = SubResource("RectangleShape2D_hitbox")
+=== FILE: ./Main.cs ===
+using Godot;
+using ChaosArena.scenes;
+
+public partial class Main : Node2D
+{
+    private MapGenerator _map;
+    private CharacterBody2D _player;
+
+    public override void _Ready()
+    {
+        _map = GetNode<MapGenerator>("Map");
+        _player = GetNode<CharacterBody2D>("LocalPlayer");
+        
+        CallDeferred(nameof(SpawnPlayerOnMap));
+    }
+
+    private void SpawnPlayerOnMap()
+    {
+        if (_map == null || _player == null) return;
+
+        Vector2I spawnCell = _map.PlayerSpawnCell;
+        Vector2 localPos = _map.MapToLocal(spawnCell);
+        _player.GlobalPosition = _map.ToGlobal(localPos);
+        
+        GD.Print($"[Main] Player teleported to room center: {_player.GlobalPosition}");
+    }
+}
+=== FILE: ./.godot/mono/temp/obj/Debug/ChaosArena.AssemblyInfo.cs ===
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Reflection;
+
+[assembly: System.Reflection.AssemblyCompanyAttribute("ChaosArena")]
+[assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9690955d37ae98db0f6ab73da11459c798996ceb")]
+[assembly: System.Reflection.AssemblyProductAttribute("ChaosArena")]
+[assembly: System.Reflection.AssemblyTitleAttribute("ChaosArena")]
+[assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+
+// Создано классом WriteCodeFragment MSBuild.
+
+
+=== FILE: ./.godot/mono/temp/obj/Debug/.NETCoreApp,Version=v8.0.AssemblyAttributes.cs ===
+// <autogenerated />
+using System;
+using System.Reflection;
+[assembly: global::System.Runtime.Versioning.TargetFrameworkAttribute(".NETCoreApp,Version=v8.0", FrameworkDisplayName = ".NET 8.0")]
+
+=== FILE: ./autoload/GameManager.cs ===
+using Godot;
+
+/// <summary>
+/// Главный синглтон игры. Управляет фазами игрового цикла.
+/// Только хост меняет фазы — клиент получает изменения через RPC.
+/// </summary>
+public partial class GameManager : Node
+{
+    // Фазы игрового цикла
+    public enum GamePhase
+    {
+        Lobby,      // Ожидание игроков
+        PvE,        // Зачистка мобов на раздельных аренах
+        Shop,       // Магазин между раундами
+        Chaos,      // Рулетка хаоса
+        PvP,        // Дуэль на общей арене
+        RoundEnd    // Конец раунда, подсчёт очков
+    }
+
+    // Текущая фаза (только чтение снаружи)
+    public GamePhase CurrentPhase { get; private set; } = GamePhase.Lobby;
+
+    // Счёт побед: ключ = id игрока, значение = количество побед
+    public int[] WinCount { get; private set; } = new int[2];
+
+    // Побед нужно для победы в матче
+    public const int WinsToWin = 3;
+
+    // Таймер текущей фазы
+    private float _phaseTimer = 0f;
+
+    // Длительность PvE фазы в секундах
+    public const float PvEDuration = 150f;
+
+    // Ссылка на EventBus (получаем через автозагрузку)
+    private EventBus _eventBus;
+
+    public override void _Ready()
+    {
+        // Получаем EventBus из автозагрузки Godot
+        _eventBus = GetNode<EventBus>("/root/EventBus");
+        GD.Print("GameManager: готов");
+    }
+
+    public override void _Process(double delta)
+    {
+        // Таймер работает только во время PvE
+        if (CurrentPhase == GamePhase.PvE)
+        {
+            _phaseTimer -= (float)delta;
+            if (_phaseTimer <= 0f)
+            {
+                // Время вышло — переходим в магазин
+                ChangePhase(GamePhase.Shop);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Меняет фазу игры. Вызывать только на хосте.
+    /// </summary>
+    public void ChangePhase(GamePhase newPhase)
+    {
+        CurrentPhase = newPhase;
+        _phaseTimer = newPhase == GamePhase.PvE ? PvEDuration : 0f;
+
+        GD.Print($"GameManager: фаза изменена на {newPhase}");
+
+        // Оповещаем все системы через EventBus
+        _eventBus.EmitSignal(EventBus.SignalName.PhaseChanged, (int)newPhase);
+    }
+
+    /// <summary>
+    /// Засчитывает победу игроку. Возвращает true если матч окончен.
+    /// </summary>
+    public bool AddWin(int playerId)
+    {
+        WinCount[playerId]++;
+        GD.Print($"GameManager: игрок {playerId} выиграл раунд. Счёт: {WinCount[0]}:{WinCount[1]}");
+
+        if (WinCount[playerId] >= WinsToWin)
+        {
+            GD.Print($"GameManager: игрок {playerId} победил в матче!");
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Сбрасывает счёт и возвращает в лобби.
+    /// </summary>
+    public void ResetMatch()
+    {
+        WinCount = new int[2];
+        ChangePhase(GamePhase.Lobby);
+    }
+}
+=== FILE: ./autoload/EventBus.cs ===
+using Godot;
+
+/// <summary>
+/// Глобальная шина событий. Все системы общаются через сигналы здесь,
+/// не держа прямых ссылок друг на друга.
+/// </summary>
+public partial class EventBus : Node
+{
+    // --- Экономика ---
+    [Signal] public delegate void CurrencyChangedEventHandler(int playerId, int newAmount);
+    [Signal] public delegate void SabotagePurchasedEventHandler(int buyerId, string sabotageType);
+
+    // --- Враги ---
+    [Signal] public delegate void EnemyDiedEventHandler(Vector2 position, int reward);
+
+    // --- Фазы игры ---
+    [Signal] public delegate void PhaseChangedEventHandler(int newPhase);
+
+    // --- Игрок ---
+    [Signal] public delegate void PlayerDiedEventHandler(int playerId);
+    [Signal] public delegate void PlayerHealthChangedEventHandler(int playerId, float newHealth);
+}
+=== FILE: ./autoload/EconomyManager.cs ===
+using Godot;
+
+/// <summary>
+/// Управляет валютой игроков. Все транзакции только через этот класс.
+/// </summary>
+public partial class EconomyManager : Node
+{
+    // Начальный баланс каждого игрока
+    public const int StartingCurrency = 100;
+
+    // Награда за убийство обычного моба
+    public const int BasicEnemyReward = 10;
+
+    // Баланс каждого игрока (индекс = id игрока)
+    private int[] _balance = new int[2];
+
+    private EventBus _eventBus;
+
+    public override void _Ready()
+    {
+        _eventBus = GetNode<EventBus>("/root/EventBus");
+
+        // Подписываемся на смерть врага — автоматически начисляем награду
+        _eventBus.EnemyDied += OnEnemyDied;
+
+        // Выдаём стартовый баланс
+        _balance[0] = StartingCurrency;
+        _balance[1] = StartingCurrency;
+
+        GD.Print("EconomyManager: готов");
+    }
+
+    /// <summary>
+    /// Возвращает текущий баланс игрока.
+    /// </summary>
+    public int GetBalance(int playerId) => _balance[playerId];
+
+    /// <summary>
+    /// Начисляет валюту игроку.
+    /// </summary>
+    public void AddCurrency(int playerId, int amount)
+    {
+        _balance[playerId] += amount;
+        GD.Print($"EconomyManager: игрок {playerId} получил {amount}. Баланс: {_balance[playerId]}");
+        _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, playerId, _balance[playerId]);
+    }
+
+    /// <summary>
+    /// Списывает валюту. Возвращает false если не хватает денег.
+    /// </summary>
+    public bool SpendCurrency(int playerId, int amount)
+    {
+        if (_balance[playerId] < amount)
+        {
+            GD.Print($"EconomyManager: игрок {playerId} — недостаточно средств");
+            return false;
+        }
+
+        _balance[playerId] -= amount;
+        GD.Print($"EconomyManager: игрок {playerId} потратил {amount}. Баланс: {_balance[playerId]}");
+        _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, playerId, _balance[playerId]);
+        return true;
+    }
+
+    /// <summary>
+    /// Сбрасывает баланс в начале нового матча.
+    /// </summary>
+    public void ResetBalances()
+    {
+        _balance[0] = StartingCurrency;
+        _balance[1] = StartingCurrency;
+        _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, 0, _balance[0]);
+        _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, 1, _balance[1]);
+    }
+
+    // Вызывается когда умирает враг — начисляем награду игроку 0 пока нет разделения арен
+    private void OnEnemyDied(Vector2 position, int reward)
+    {
+        // TODO: определять какому игроку принадлежит арена
+        AddCurrency(0, reward);
+    }
+}
+=== FILE: ./systems/EnemySpawner.cs ===
+using Godot;
+using System.Collections.Generic;
+using ChaosArena.entities.enemies;
+
+namespace ChaosArena.systems
+{
+    public partial class EnemySpawner : Node2D
+    {
+        [Export] public PackedScene EnemyScene;
+        [Export] public int MinPerWave = 3;
+        [Export] public int MaxPerWave = 7;
+        [Export] public float WaveInterval = 12f;
+        [Export] public int MaxEnemies = 15;
+
+        private List<Vector2> _spawnPositions = new();
+        private int _activeEnemies = 0;
+        private float _timer = 0f;
+        private bool _spawning = false;
+
+        public void SetSpawnPoints(List<Vector2> positions)
+        {
+            _spawnPositions = positions;
+            _timer = WaveInterval;
+            _spawning = _spawnPositions.Count > 0;
+            
+            GD.Print($"[EnemySpawner] Точки получены ({_spawnPositions.Count}). Активация.");
+        }
+
+        public override void _Process(double delta)
+        {
+            if (!_spawning || _spawnPositions.Count == 0) return;
+
+            _timer += (float)delta;
+            if (_timer >= WaveInterval)
+            {
+                _timer = 0f;
+                SpawnWave();
+            }
+        }
+
+        private void SpawnWave()
+        {
+            if (_activeEnemies >= MaxEnemies || EnemyScene == null) return;
+
+            int count = GD.RandRange(MinPerWave, MaxPerWave);
+            int spawned = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (_activeEnemies >= MaxEnemies) break;
+
+                Vector2 basePos = _spawnPositions[GD.RandRange(0, _spawnPositions.Count - 1)];
+                
+                var enemy = EnemyScene.Instantiate<EnemyBase>();
+                
+                Vector2 offset = new Vector2(GD.RandRange(-24, 24), GD.RandRange(-24, 24));
+                enemy.GlobalPosition = basePos + offset;
+
+                enemy.TreeExited += () => _activeEnemies = Mathf.Max(0, _activeEnemies - 1);
+                
+                GetTree().CurrentScene.AddChild(enemy);
+                
+                _activeEnemies++;
+                spawned++;
+            }
+
+            GD.Print($"[EnemySpawner] Волна: +{spawned} мобов. Всего на карте: {_activeEnemies}");
+        }
+
+        public void Stop()
+        {
+            _spawning = false;
+        }
+    }
+}
+=== FILE: ./scenes/MapGenerator.cs ===
+using Godot;
+using System.Collections.Generic;
+using ChaosArena.systems;
+
+namespace ChaosArena.scenes
+{
+    public partial class MapGenerator : TileMapLayer
+    {
+        [Export] public int MinRooms = 4;
+        [Export] public int MaxRooms = 6;
+        [Export] public int MinRoomSize = 20;
+        [Export] public int MaxRoomSize = 30;
+
+        private readonly Vector2I _floorTile = new Vector2I(1, 0);
+        private readonly Vector2I[] _wallTiles = new Vector2I[]
+        {
+            new Vector2I(4, 3),
+            new Vector2I(9, 4),
+            new Vector2I(10, 4),
+            new Vector2I(11, 4)
+        };
+
+        private enum CellType { Empty, Floor, Wall }
+
+        private CellType[,] _grid;
+        private const int GridSize = 120;
+        private readonly List<Room> _rooms = new List<Room>();
+
+        public Vector2I PlayerSpawnCell { get; private set; }
+
+        public override void _Ready()
+        {
+            GD.Randomize();
+            GenerateDungeon();
+        }
+        
+        private void NotifySpawner()
+        {
+            var spawner = GetNodeOrNull<EnemySpawner>("/root/Main/EnemySpawner");
+            if (spawner == null) return;
+
+            List<Vector2> roomCenters = new();
+    
+            for (int i = 1; i < _rooms.Count; i++)
+            {
+                Vector2 worldPos = ToGlobal(MapToLocal(_rooms[i].Center));
+                roomCenters.Add(worldPos);
+            }
+
+            spawner.SetSpawnPoints(roomCenters);
+        }
+
+        public void GenerateDungeon()
+        {
+            Clear();
+            _rooms.Clear();
+            _grid = new CellType[GridSize, GridSize];
+
+            int targetRooms = GD.RandRange(MinRooms, MaxRooms);
+            int attempts = 0;
+            int maxAttempts = 500;
+
+            while (_rooms.Count < targetRooms && attempts < maxAttempts)
+            {
+                attempts++;
+                if (TryCreateRoom(out Room room))
+                {
+                    _rooms.Add(room);
+                }
+            }
+
+            if (_rooms.Count < 2)
+            {
+                GD.PrintErr("MapGenerator: failed to create enough rooms!");
+                return;
+            }
+
+            for (int i = 0; i < _rooms.Count - 1; i++)
+                ConnectRooms(_rooms[i], _rooms[i + 1]);
+
+            BuildWalls();
+            RenderGrid();
+
+            Position = new Vector2(-(GridSize / 2f) * 16f, -(GridSize / 2f) * 16f);
+            PlayerSpawnCell = _rooms[0].Center;
+
+            GD.Print($"Dungeon: {_rooms.Count} rooms, spawn: {PlayerSpawnCell}");
+            NotifySpawner();
+        }
+
+        private bool TryCreateRoom(out Room room)
+        {
+            int w = GD.RandRange(MinRoomSize, MaxRoomSize);
+            int h = GD.RandRange(MinRoomSize, MaxRoomSize);
+
+            int margin = 12;
+            int x = GD.RandRange(margin, GridSize - w - margin);
+            int y = GD.RandRange(margin, GridSize - h - margin);
+
+            room = new Room(x, y, w, h);
+
+            foreach (var existing in _rooms)
+            {
+                if (room.Intersects(existing, padding: 5))
+                    return false;
+            }
+
+            for (int rx = x; rx < x + w; rx++)
+                for (int ry = y; ry < y + h; ry++)
+                    _grid[rx, ry] = CellType.Floor;
+
+            return true;
+        }
+
+        private void ConnectRooms(Room a, Room b)
+        {
+            Vector2I start = a.Center;
+            Vector2I end = b.Center;
+
+            if (GD.Randf() > 0.5f)
+            {
+                CarveHorizontal(start.X, end.X, start.Y);
+                CarveVertical(start.Y, end.Y, end.X);
+            }
+            else
+            {
+                CarveVertical(start.Y, end.Y, start.X);
+                CarveHorizontal(start.X, end.X, end.Y);
+            }
+        }
+
+        // Широкий коридор: 3 тайла (center ± 1)
+        private void CarveHorizontal(int fromX, int toX, int y)
+        {
+            int min = Mathf.Min(fromX, toX);
+            int max = Mathf.Max(fromX, toX);
+            for (int x = min; x <= max; x++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int ny = y + dy;
+                    if (ny >= 0 && ny < GridSize && x >= 0 && x < GridSize)
+                        _grid[x, ny] = CellType.Floor;
+                }
+            }
+        }
+
+        private void CarveVertical(int fromY, int toY, int x)
+        {
+            int min = Mathf.Min(fromY, toY);
+            int max = Mathf.Max(fromY, toY);
+            for (int y = min; y <= max; y++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int nx = x + dx;
+                    if (nx >= 0 && nx < GridSize && y >= 0 && y < GridSize)
+                        _grid[nx, y] = CellType.Floor;
+                }
+            }
+        }
+
+        private void BuildWalls()
+        {
+            for (int x = 0; x < GridSize; x++)
+            {
+                for (int y = 0; y < GridSize; y++)
+                {
+                    if (_grid[x, y] == CellType.Empty && HasFloorNeighbor(x, y))
+                        _grid[x, y] = CellType.Wall;
+                }
+            }
+        }
+
+        private bool HasFloorNeighbor(int x, int y)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (nx >= 0 && nx < GridSize && ny >= 0 && ny < GridSize)
+                        if (_grid[nx, ny] == CellType.Floor)
+                            return true;
+                }
+            }
+            return false;
+        }
+
+        private void RenderGrid()
+        {
+            for (int x = 0; x < GridSize; x++)
+            {
+                for (int y = 0; y < GridSize; y++)
+                {
+                    Vector2I cell = new Vector2I(x, y);
+                    if (_grid[x, y] == CellType.Floor)
+                        SetCell(cell, 0, _floorTile);
+                    else if (_grid[x, y] == CellType.Wall)
+                        SetCell(cell, 0, _wallTiles[GD.RandRange(0, _wallTiles.Length - 1)]);
+                }
+            }
+        }
+
+        private readonly struct Room
+        {
+            public readonly int X;
+            public readonly int Y;
+            public readonly int Width;
+            public readonly int Height;
+
+            public Room(int x, int y, int w, int h)
+            {
+                X = x;
+                Y = y;
+                Width = w;
+                Height = h;
+            }
+
+            public Vector2I Center => new Vector2I(X + Width / 2, Y + Height / 2);
+
+            public bool Intersects(Room other, int padding)
+            {
+                return X - padding < other.X + other.Width + padding &&
+                       X + Width + padding > other.X - padding &&
+                       Y - padding < other.Y + other.Height + padding &&
+                       Y + Height + padding > other.Y - padding;
+            }
+        }
+    }
+}
+=== FILE: ./Main.tscn ===
+[gd_scene format=3 uid="uid://t3flh0ky16k2"]
+
+[ext_resource type="Script" uid="uid://rwsaaqwv6c2o" path="res://Main.cs" id="1_glv2v"]
+[ext_resource type="PackedScene" uid="uid://b0idaag6co4fs" path="res://entities/player/LocalPlayer.tscn" id="2_uu6xs"]
+[ext_resource type="Texture2D" uid="uid://bmmh1xljehhgh" path="res://assets/Tilemap/tilemap_packed.png" id="4_fos0i"]
+[ext_resource type="Script" uid="uid://cw0jbnrhicf5v" path="res://scenes/MapGenerator.cs" id="5_3dxm6"]
+[ext_resource type="Script" path="res://systems/EnemySpawner.cs" id="6_spawner"]
+[ext_resource type="PackedScene" uid="uid://dorytj71ig3e2" path="res://entities/enemies/BasicEnemy.tscn" id="7_enemy"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_lgr22"]
+texture = ExtResource("4_fos0i")
+0:0/0 = 0
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+7:0/0 = 0
+8:0/0 = 0
+9:0/0 = 0
+10:0/0 = 0
+11:0/0 = 0
+0:1/0 = 0
+1:1/0 = 0
+2:1/0 = 0
+3:1/0 = 0
+4:1/0 = 0
+5:1/0 = 0
+6:1/0 = 0
+7:1/0 = 0
+8:1/0 = 0
+9:1/0 = 0
+10:1/0 = 0
+11:1/0 = 0
+0:2/0 = 0
+1:2/0 = 0
+2:2/0 = 0
+3:2/0 = 0
+4:2/0 = 0
+5:2/0 = 0
+6:2/0 = 0
+7:2/0 = 0
+8:2/0 = 0
+9:2/0 = 0
+10:2/0 = 0
+11:2/0 = 0
+0:3/0 = 0
+1:3/0 = 0
+2:3/0 = 0
+3:3/0 = 0
+4:3/0 = 0
+4:3/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+5:3/0 = 0
+6:3/0 = 0
+7:3/0 = 0
+8:3/0 = 0
+9:3/0 = 0
+10:3/0 = 0
+11:3/0 = 0
+0:4/0 = 0
+1:4/0 = 0
+2:4/0 = 0
+3:4/0 = 0
+4:4/0 = 0
+5:4/0 = 0
+6:4/0 = 0
+7:4/0 = 0
+8:4/0 = 0
+9:4/0 = 0
+9:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+10:4/0 = 0
+10:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+11:4/0 = 0
+11:4/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+0:5/0 = 0
+1:5/0 = 0
+2:5/0 = 0
+3:5/0 = 0
+4:5/0 = 0
+5:5/0 = 0
+6:5/0 = 0
+7:5/0 = 0
+8:5/0 = 0
+9:5/0 = 0
+10:5/0 = 0
+11:5/0 = 0
+0:6/0 = 0
+1:6/0 = 0
+2:6/0 = 0
+3:6/0 = 0
+4:6/0 = 0
+5:6/0 = 0
+6:6/0 = 0
+7:6/0 = 0
+8:6/0 = 0
+9:6/0 = 0
+10:6/0 = 0
+11:6/0 = 0
+0:7/0 = 0
+1:7/0 = 0
+2:7/0 = 0
+3:7/0 = 0
+4:7/0 = 0
+5:7/0 = 0
+6:7/0 = 0
+7:7/0 = 0
+8:7/0 = 0
+9:7/0 = 0
+10:7/0 = 0
+11:7/0 = 0
+0:8/0 = 0
+1:8/0 = 0
+2:8/0 = 0
+3:8/0 = 0
+4:8/0 = 0
+5:8/0 = 0
+6:8/0 = 0
+7:8/0 = 0
+8:8/0 = 0
+9:8/0 = 0
+10:8/0 = 0
+11:8/0 = 0
+0:9/0 = 0
+1:9/0 = 0
+2:9/0 = 0
+3:9/0 = 0
+4:9/0 = 0
+5:9/0 = 0
+6:9/0 = 0
+7:7/0 = 0
+8:8/0 = 0
+9:9/0 = 0
+10:10/0 = 0
+11:11/0 = 0
+
+[sub_resource type="TileSet" id="TileSet_trn2v"]
+physics_layer_0/collision_layer = 1
+sources/0 = SubResource("TileSetAtlasSource_lgr22")
+
+[node name="Node2D" type="Node2D" unique_id=954741575]
+script = ExtResource("1_glv2v")
+
+[node name="Map" type="TileMapLayer" parent="." unique_id=909084757]
+tile_set = SubResource("TileSet_trn2v")
+script = ExtResource("5_3dxm6")
+
+[node name="PlayerSpawn" type="Marker2D" parent="." unique_id=24286143]
+
+[node name="LocalPlayer" parent="." unique_id=2032481076 instance=ExtResource("2_uu6xs")]
+
+[node name="EnemySpawner" type="Node2D" parent="."]
+script = ExtResource("6_spawner")
+EnemyScene = ExtResource("7_enemy")

@@ -18,10 +18,13 @@ shape = SubResource("RectangleShape2D_g2sw8")
 scale = Vector2(0.1, 0.1)
 texture = ExtResource("2_7a2jn")
 
+[node name="WandHolder" type="Marker2D" parent="Sprite2D" unique_id=1526685526]
+position = Vector2(50, 20)
+
+[node name="Wand" type="Sprite2D" parent="Sprite2D/WandHolder" unique_id=999999999]
+scale = Vector2(0.5, 0.5)
+texture = ExtResource("3_kqvpx")
+offset = Vector2(-8, 0)
+
 [node name="Camera2D" type="Camera2D" parent="." unique_id=298686031]
 zoom = Vector2(2, 2)
-
-[node name="Wand" type="Sprite2D" parent="." unique_id=1526685526]
-position = Vector2(8, 0)
-scale = Vector2(0.05, 0.05)
-texture = ExtResource("3_kqvpx")

@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using ChaosArena.systems;
 
 namespace ChaosArena.scenes
 {
@@ -31,6 +32,22 @@ namespace ChaosArena.scenes
         {
             GD.Randomize();
             GenerateDungeon();
+        }
+        
+        private void NotifySpawner()
+        {
+            var spawner = GetNodeOrNull<EnemySpawner>("/root/Main/EnemySpawner");
+            if (spawner == null) return;
+
+            List<Vector2> roomCenters = new();
+    
+            for (int i = 1; i < _rooms.Count; i++)
+            {
+                Vector2 worldPos = ToGlobal(MapToLocal(_rooms[i].Center));
+                roomCenters.Add(worldPos);
+            }
+
+            spawner.SetSpawnPoints(roomCenters);
         }
 
         public void GenerateDungeon()
@@ -68,6 +85,7 @@ namespace ChaosArena.scenes
             PlayerSpawnCell = _rooms[0].Center;
 
             GD.Print($"Dungeon: {_rooms.Count} rooms, spawn: {PlayerSpawnCell}");
+            NotifySpawner();
         }
 
         private bool TryCreateRoom(out Room room)

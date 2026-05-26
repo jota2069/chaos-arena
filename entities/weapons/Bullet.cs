@@ -1,46 +1,52 @@
 using Godot;
+using ChaosArena.entities.enemies;
 
-/// <summary>
-/// Пуля — летит в направлении, наносит урон врагам при касании.
-/// </summary>
-public partial class Bullet : Area2D
+namespace ChaosArena.entities.weapons
 {
-    [Export] public float Speed = 300f;
-    [Export] public float Damage = 10f;
-    [Export] public float Lifetime = 2f;
-
-    private Vector2 _direction;
-    private float _timer;
-
-    public void Init(Vector2 direction)
+    public partial class Bullet : Area2D
     {
-        _direction = direction.Normalized();
-    }
+        [Export] public float Speed = 300f;
+        [Export] public float Damage = 10f;
+        [Export] public float Lifetime = 2f;
 
-    public override void _PhysicsProcess(double delta)
-    {
-        _timer += (float)delta;
-        if (_timer >= Lifetime)
+        private Vector2 _direction;
+
+        public void Init(Vector2 direction)
         {
-            QueueFree();
-            return;
+            _direction = direction.Normalized();
         }
 
-        Position += _direction * Speed * (float)delta;
-    }
-
-    public override void _Ready()
-    {
-        // Подписываемся на сигнал столкновения
-        BodyEntered += OnBodyEntered;
-    }
-
-    private void OnBodyEntered(Node2D body)
-    {
-        if (body is EnemyBase enemy)
+        public override void _Ready()
         {
-            enemy.TakeDamage(Damage);
-            QueueFree();
+            BodyEntered += OnBodyEntered;
+            AreaEntered += OnAreaEntered;
+            
+            // Автоудаление по таймеру
+            var timer = GetTree().CreateTimer(Lifetime);
+            timer.Timeout += QueueFree;
+        }
+
+        public override void _PhysicsProcess(double delta)
+        {
+            Position += _direction * Speed * (float)delta;
+        }
+
+        private void OnBodyEntered(Node2D body)
+        {
+            if (body is EnemyBase enemy)
+            {
+                enemy.TakeDamage(Damage);
+                QueueFree();
+            }
+        }
+
+        private void OnAreaEntered(Area2D area)
+        {
+            if (area.GetParent() is EnemyBase enemy)
+            {
+                enemy.TakeDamage(Damage);
+                QueueFree();
+            }
         }
     }
 }

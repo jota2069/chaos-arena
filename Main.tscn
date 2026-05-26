@@ -4,6 +4,8 @@
 [ext_resource type="PackedScene" uid="uid://b0idaag6co4fs" path="res://entities/player/LocalPlayer.tscn" id="2_uu6xs"]
 [ext_resource type="Texture2D" uid="uid://bmmh1xljehhgh" path="res://assets/Tilemap/tilemap_packed.png" id="4_fos0i"]
 [ext_resource type="Script" uid="uid://cw0jbnrhicf5v" path="res://scenes/MapGenerator.cs" id="5_3dxm6"]
+[ext_resource type="Script" path="res://systems/EnemySpawner.cs" id="6_spawner"]
+[ext_resource type="PackedScene" uid="uid://dorytj71ig3e2" path="res://entities/enemies/BasicEnemy.tscn" id="7_enemy"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_lgr22"]
 texture = ExtResource("4_fos0i")
@@ -126,23 +128,11 @@ texture = ExtResource("4_fos0i")
 4:9/0 = 0
 5:9/0 = 0
 6:9/0 = 0
-7:9/0 = 0
-8:9/0 = 0
+7:7/0 = 0
+8:8/0 = 0
 9:9/0 = 0
-10:9/0 = 0
-11:9/0 = 0
-0:10/0 = 0
-1:10/0 = 0
-2:10/0 = 0
-3:10/0 = 0
-4:10/0 = 0
-5:10/0 = 0
-6:10/0 = 0
-7:10/0 = 0
-8:10/0 = 0
-9:10/0 = 0
 10:10/0 = 0
-11:10/0 = 0
+11:11/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_trn2v"]
 physics_layer_0/collision_layer = 1
@@ -158,3 +148,7 @@ script = ExtResource("5_3dxm6")
 [node name="PlayerSpawn" type="Marker2D" parent="." unique_id=24286143]
 
 [node name="LocalPlayer" parent="." unique_id=2032481076 instance=ExtResource("2_uu6xs")]
+
+[node name="EnemySpawner" type="Node2D" parent="."]
+script = ExtResource("6_spawner")
+EnemyScene = ExtResource("7_enemy")
