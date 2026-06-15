@@ -11,6 +11,10 @@ namespace ChaosArena.entities.weapons
 
         private Vector2 _direction;
 
+        // Защита от двойного попадания: тело врага (слой 1) и его хитбокс (слой 4)
+        // могут сработать в одном кадре до отложенного QueueFree.
+        private bool _hasHit;
+
         public void Init(Vector2 direction)
         {
             _direction = direction.Normalized();
@@ -37,8 +41,10 @@ namespace ChaosArena.entities.weapons
 
         private void OnBodyEntered(Node2D body)
         {
+            if (_hasHit) return;
             if (body is EnemyBase enemy)
             {
+                _hasHit = true;
                 enemy.TakeDamage(Damage);
                 QueueFree();
             }
@@ -46,9 +52,11 @@ namespace ChaosArena.entities.weapons
 
         private void OnAreaEntered(Area2D area)
         {
+            if (_hasHit) return;
             // Хитбокс врага — его родитель EnemyBase
             if (area.IsInGroup("enemy_hitboxes") && area.GetParent() is EnemyBase enemy)
             {
+                _hasHit = true;
                 enemy.TakeDamage(Damage);
                 QueueFree();
             }

@@ -4,10 +4,18 @@ using ChaosArena.entities.enemies;
 
 namespace ChaosArena.systems
 {
+    /// <summary>
+    /// Спавнер врагов. Точки спавна задаёт MapGenerator, но сам спавн
+    /// идёт только во время фазы PvE — спавнер слушает PhaseChanged.
+    /// При выходе из PvE спавн останавливается и арена очищается.
+    /// </summary>
     public partial class EnemySpawner : Node2D
     {
         [Export] public PackedScene EnemyScene;
-        
+
+        // Id игрока-владельца этой арены — передаётся каждому врагу.
+        [Export] public int OwnerPlayerId { get; set; } = 0;
+
         // ПРАВКА: Временный баланс для тестов, чтобы не умирать мгновенно
         [Export] public int MinPerWave = 2;
         [Export] public int MaxPerWave = 4;
@@ -15,22 +23,46 @@ namespace ChaosArena.systems
         [Export] public int MaxEnemies = 8;
 
         private List<Vector2> _spawnPositions = new();
-        private int _activeEnemies = 0;
+        private readonly List<EnemyBase> _activeEnemies = new();
         private float _timer = 0f;
         private bool _spawning = false;
 
+        private EventBus _eventBus;
+
+        public override void _Ready()
+        {
+            _eventBus = GetNodeOrNull<EventBus>("/root/EventBus");
+            if (_eventBus == null)
+            {
+                GD.PrintErr("[EnemySpawner] EventBus не найден!");
+                return;
+            }
+
+            if (EnemyScene == null)
+                GD.PrintErr("[EnemySpawner] EnemyScene не задана в инспекторе!");
+
+            // C#-стиль подписки (соглашение CLAUDE.md), отписка в _ExitTree.
+            _eventBus.PhaseChanged += OnPhaseChanged;
+        }
+
+        public override void _ExitTree()
+        {
+            if (_eventBus == null || !GodotObject.IsInstanceValid(_eventBus)) return;
+
+            _eventBus.PhaseChanged -= OnPhaseChanged;
+        }
+
+        /// <summary>
+        /// Сохраняет точки спавна. Сам спавн НЕ запускает — ждём фазу PvE.
+        /// </summary>
         public void SetSpawnPoints(List<Vector2> positions)
         {
             _spawnPositions = positions;
-            _timer = 0f; 
-            _spawning = _spawnPositions.Count > 0;
-            
-            GD.Print($"[EnemySpawner] Точки получены ({_spawnPositions.Count}). Активация.");
-            
+            GD.Print($"[EnemySpawner] Точки получены ({_spawnPositions.Count}). Ждём фазу PvE.");
+
+            // Если уже идёт PvE (точки пришли позже смены фазы) — стартуем сразу.
             if (_spawning)
-            {
-                SpawnWave();
-            }
+                StartSpawning();
         }
 
         public override void _Process(double delta)
@@ -45,38 +77,89 @@ namespace ChaosArena.systems
             }
         }
 
+        // Реакция на смену фазы: спавним только в PvE, иначе стоп + очистка.
+        private void OnPhaseChanged(int newPhase)
+        {
+            var phase = (GameManager.GamePhase)newPhase;
+
+            if (phase == GameManager.GamePhase.PvE)
+            {
+                StartSpawning();
+            }
+            else
+            {
+                Stop();
+                ClearEnemies();
+            }
+        }
+
+        private void StartSpawning()
+        {
+            _timer = 0f;
+            _spawning = true;
+
+            if (_spawnPositions.Count == 0)
+            {
+                GD.Print("[EnemySpawner] PvE началась, но точки спавна ещё не получены.");
+                return;
+            }
+
+            GD.Print("[EnemySpawner] PvE: спавн запущен.");
+            SpawnWave();
+        }
+
         private void SpawnWave()
         {
-            if (_activeEnemies >= MaxEnemies || EnemyScene == null) return;
+            if (_activeEnemies.Count >= MaxEnemies || EnemyScene == null) return;
 
             int count = GD.RandRange(MinPerWave, MaxPerWave);
             int spawned = 0;
 
             for (int i = 0; i < count; i++)
             {
-                if (_activeEnemies >= MaxEnemies) break;
+                if (_activeEnemies.Count >= MaxEnemies) break;
 
                 Vector2 basePos = _spawnPositions[GD.RandRange(0, _spawnPositions.Count - 1)];
-                
+
                 var enemy = EnemyScene.Instantiate<EnemyBase>();
-                
+
+                // Владелец арены — чтобы награда ушла нужному игроку.
+                enemy.OwnerPlayerId = OwnerPlayerId;
+
                 Vector2 offset = new Vector2(GD.RandRange(-24, 24), GD.RandRange(-24, 24));
                 enemy.GlobalPosition = basePos + offset;
 
-                enemy.TreeExited += () => _activeEnemies = Mathf.Max(0, _activeEnemies - 1);
-                
+                _activeEnemies.Add(enemy);
+                enemy.TreeExited += () => _activeEnemies.Remove(enemy);
+
                 GetTree().CurrentScene.AddChild(enemy);
-                
-                _activeEnemies++;
                 spawned++;
             }
 
-            GD.Print($"[EnemySpawner] Волна: +{spawned} мобов. Всего на карте: {_activeEnemies}");
+            GD.Print($"[EnemySpawner] Волна: +{spawned} мобов. Всего на карте: {_activeEnemies.Count}");
         }
 
+        /// <summary>
+        /// Останавливает спавн новых волн (живые враги остаются).
+        /// </summary>
         public void Stop()
         {
             _spawning = false;
+        }
+
+        /// <summary>
+        /// Удаляет всех живых врагов этой арены (при переходе из PvE).
+        /// </summary>
+        public void ClearEnemies()
+        {
+            // Копируем список: TreeExited изменяет _activeEnemies во время удаления.
+            foreach (var enemy in new List<EnemyBase>(_activeEnemies))
+            {
+                if (GodotObject.IsInstanceValid(enemy))
+                    enemy.QueueFree();
+            }
+            _activeEnemies.Clear();
+            GD.Print("[EnemySpawner] Арена очищена от мобов.");
         }
     }
 }

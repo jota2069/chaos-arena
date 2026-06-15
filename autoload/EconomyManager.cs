@@ -26,30 +26,55 @@ public partial class EconomyManager : Node
         // Выдаём стартовый баланс
         _balance[0] = StartingCurrency;
         _balance[1] = StartingCurrency;
+    }
 
-        GD.Print("EconomyManager: готов");
+    public override void _ExitTree()
+    {
+        if (_eventBus == null || !GodotObject.IsInstanceValid(_eventBus)) return;
+
+        _eventBus.EnemyDied -= OnEnemyDied;
     }
 
     /// <summary>
-    /// Возвращает текущий баланс игрока.
+    /// Возвращает текущий баланс игрока (0 при некорректном id).
     /// </summary>
-    public int GetBalance(int playerId) => _balance[playerId];
+    public int GetBalance(int playerId)
+    {
+        if (!IsValidPlayerId(playerId))
+        {
+            GD.PrintErr($"EconomyManager: GetBalance с некорректным id {playerId}");
+            return 0;
+        }
+        return _balance[playerId];
+    }
 
     /// <summary>
     /// Начисляет валюту игроку.
     /// </summary>
     public void AddCurrency(int playerId, int amount)
     {
+        if (!IsValidPlayerId(playerId))
+        {
+            GD.PrintErr($"EconomyManager: AddCurrency с некорректным id {playerId}");
+            return;
+        }
+
         _balance[playerId] += amount;
         GD.Print($"EconomyManager: игрок {playerId} получил {amount}. Баланс: {_balance[playerId]}");
         _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, playerId, _balance[playerId]);
     }
 
     /// <summary>
-    /// Списывает валюту. Возвращает false если не хватает денег.
+    /// Списывает валюту. Возвращает false если id некорректен или не хватает денег.
     /// </summary>
     public bool SpendCurrency(int playerId, int amount)
     {
+        if (!IsValidPlayerId(playerId))
+        {
+            GD.PrintErr($"EconomyManager: SpendCurrency с некорректным id {playerId}");
+            return false;
+        }
+
         if (_balance[playerId] < amount)
         {
             GD.Print($"EconomyManager: игрок {playerId} — недостаточно средств");
@@ -73,10 +98,15 @@ public partial class EconomyManager : Node
         _eventBus.EmitSignal(EventBus.SignalName.CurrencyChanged, 1, _balance[1]);
     }
 
-    // Вызывается когда умирает враг — начисляем награду игроку 0 пока нет разделения арен
-    private void OnEnemyDied(Vector2 position, int reward)
+    // Вызывается когда умирает враг — награду получает владелец арены.
+    private void OnEnemyDied(Vector2 position, int reward, int ownerPlayerId)
     {
-        // TODO: определять какому игроку принадлежит арена
-        AddCurrency(0, reward);
+        AddCurrency(ownerPlayerId, reward);
+    }
+
+    // Проверка, что id игрока попадает в границы массива балансов.
+    private bool IsValidPlayerId(int playerId)
+    {
+        return playerId >= 0 && playerId < _balance.Length;
     }
 }
