@@ -1,4 +1,5 @@
 using Godot;
+using ChaosArena.autoload;
 using ChaosArena.scenes;
 
 namespace ChaosArena
@@ -18,6 +19,21 @@ namespace ChaosArena
             _player = GetNode<CharacterBody2D>("LocalPlayer");
 
             CallDeferred(nameof(SpawnPlayerOnMap));
+        }
+
+        // Временные dev-клавиши, пока нет лобби: F1 — поднять хост, F2 — подключиться
+        // к localhost. Будут заменены на ShopUI/Лобби.
+        public override void _UnhandledInput(InputEvent @event)
+        {
+            if (@event is not InputEventKey { Pressed: true, Echo: false } key) return;
+
+            var net = GetNodeOrNull<NetworkManager>("/root/NetworkManager");
+            if (net == null || net.IsNetworked) return;
+
+            if (key.Keycode == Key.F1)
+                net.HostGame();
+            else if (key.Keycode == Key.F2)
+                net.JoinGame();
         }
 
         private void SpawnPlayerOnMap()

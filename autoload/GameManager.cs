@@ -24,6 +24,9 @@ namespace ChaosArena.autoload
         // Текущая фаза (только чтение снаружи)
         public GamePhase CurrentPhase { get; private set; } = GamePhase.Lobby;
 
+        // В сетевой игре клиент НЕ ведёт фазы сам — их транслирует авторитетный хост.
+        public bool IsNetworkClient { get; private set; } = false;
+
         // Номер текущего раунда (начинается с 1 после StartMatch)
         public int CurrentRound { get; private set; } = 0;
 
@@ -67,7 +70,9 @@ namespace ChaosArena.autoload
             if (_phaseTimer <= 0f)
             {
                 _phaseTimerActive = false;
-                OnPhaseTimerFinished();
+                // В сети фазы ведёт хост; клиент ждёт его команды и сам не переключает.
+                if (!IsNetworkClient)
+                    OnPhaseTimerFinished();
             }
         }
 
@@ -148,6 +153,32 @@ namespace ChaosArena.autoload
         /// Сколько секунд осталось до конца текущей фазы (0 если без таймера).
         /// </summary>
         public float GetPhaseTimeLeft() => _phaseTimer;
+
+        // --- Сетевой режим ---
+
+        /// <summary>
+        /// Переводит менеджер в режим сетевого клиента: фазы приходят от хоста,
+        /// локальный автопереход выключается. Вызывается из NetworkManager.
+        /// </summary>
+        public void SetNetworkClient(bool value)
+        {
+            IsNetworkClient = value;
+        }
+
+        /// <summary>
+        /// Применяет фазу, присланную хостом по сети. Клиент не запускает свой
+        /// автопереход — только отображает фазу и таймер через EventBus.
+        /// </summary>
+        public void ApplyNetworkPhase(int phaseInt, float timeLeft)
+        {
+            CurrentPhase = (GamePhase)phaseInt;
+            _phaseTimer = timeLeft;
+            // Таймер тикает для UI, но OnPhaseTimerFinished у клиента не сработает.
+            _phaseTimerActive = timeLeft > 0f;
+
+            _eventBus.EmitSignal(EventBus.SignalName.PhaseChanged, phaseInt);
+            _eventBus.EmitSignal(EventBus.SignalName.PhaseTimerChanged, timeLeft);
+        }
 
         // --- Внутреннее ---
 
