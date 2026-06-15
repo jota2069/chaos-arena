@@ -1,4 +1,6 @@
 using Godot;
+using ChaosArena.autoload;
+using ChaosArena.entities.player;
 
 namespace ChaosArena.ui
 {

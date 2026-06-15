@@ -3,6 +3,10 @@ using ChaosArena.entities.weapons;
 
 namespace ChaosArena.entities.player
 {
+    /// <summary>
+    /// Локальный игрок: ввод WASD, стрельба ЛКМ по направлению мыши,
+    /// процедурная анимация (покачивание, тень, частицы пыли).
+    /// </summary>
     public partial class LocalPlayer : PlayerBase
     {
         // Путь к сцене пули
@@ -23,8 +27,7 @@ namespace ChaosArena.entities.player
         protected override void OnReady()
         {
             AddToGroup("players");
-            GD.Print($"LocalPlayer {PlayerId}: готов");
-            
+
             _sprite = GetNode<Sprite2D>("Sprite2D");
             
             // Создаем тень программно

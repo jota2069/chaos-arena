@@ -4,6 +4,10 @@ using ChaosArena.systems;
 
 namespace ChaosArena.scenes
 {
+    /// <summary>
+    /// Процедурный генератор подземелья на TileMapLayer: расставляет комнаты,
+    /// соединяет их коридорами, обводит стенами и передаёт точки спавна спавнеру.
+    /// </summary>
     public partial class MapGenerator : TileMapLayer
     {
         [Export] public int MinRooms = 4;
@@ -52,7 +56,6 @@ namespace ChaosArena.scenes
                 roomCenters.Add(worldPos);
             }
 
-            GD.Print($"[MapGenerator] Передаю {roomCenters.Count} точек спавна");
             spawner.SetSpawnPoints(roomCenters);
         }
 
@@ -90,7 +93,6 @@ namespace ChaosArena.scenes
             Position = new Vector2(-(GridSize / 2f) * 16f, -(GridSize / 2f) * 16f);
             PlayerSpawnCell = _rooms[0].Center;
 
-            GD.Print($"Dungeon: {_rooms.Count} rooms, spawn: {PlayerSpawnCell}");
             NotifySpawner();
         }
 

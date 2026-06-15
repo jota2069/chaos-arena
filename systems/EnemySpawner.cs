@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using ChaosArena.autoload;
 using ChaosArena.entities.enemies;
 
 namespace ChaosArena.systems
@@ -58,7 +59,6 @@ namespace ChaosArena.systems
         public void SetSpawnPoints(List<Vector2> positions)
         {
             _spawnPositions = positions;
-            GD.Print($"[EnemySpawner] Точки получены ({_spawnPositions.Count}). Ждём фазу PvE.");
 
             // Если уже идёт PvE (точки пришли позже смены фазы) — стартуем сразу.
             if (_spawning)
@@ -99,12 +99,8 @@ namespace ChaosArena.systems
             _spawning = true;
 
             if (_spawnPositions.Count == 0)
-            {
-                GD.Print("[EnemySpawner] PvE началась, но точки спавна ещё не получены.");
                 return;
-            }
 
-            GD.Print("[EnemySpawner] PvE: спавн запущен.");
             SpawnWave();
         }
 
@@ -113,7 +109,6 @@ namespace ChaosArena.systems
             if (_activeEnemies.Count >= MaxEnemies || EnemyScene == null) return;
 
             int count = GD.RandRange(MinPerWave, MaxPerWave);
-            int spawned = 0;
 
             for (int i = 0; i < count; i++)
             {
@@ -133,10 +128,7 @@ namespace ChaosArena.systems
                 enemy.TreeExited += () => _activeEnemies.Remove(enemy);
 
                 GetTree().CurrentScene.AddChild(enemy);
-                spawned++;
             }
-
-            GD.Print($"[EnemySpawner] Волна: +{spawned} мобов. Всего на карте: {_activeEnemies.Count}");
         }
 
         /// <summary>
@@ -159,7 +151,6 @@ namespace ChaosArena.systems
                     enemy.QueueFree();
             }
             _activeEnemies.Clear();
-            GD.Print("[EnemySpawner] Арена очищена от мобов.");
         }
     }
 }

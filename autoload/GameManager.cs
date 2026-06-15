@@ -1,98 +1,199 @@
 using Godot;
 
-/// <summary>
-/// Главный синглтон игры. Управляет фазами игрового цикла.
-/// Только хост меняет фазы — клиент получает изменения через RPC.
-/// </summary>
-public partial class GameManager : Node
+namespace ChaosArena.autoload
 {
-    // Фазы игрового цикла
-    public enum GamePhase
+    /// <summary>
+    /// Главный синглтон игры. Единственный авторитет смены фаз в оффлайн-режиме.
+    /// Управляет полным игровым циклом: Lobby -> PvE -> Shop -> Chaos -> PvP -> RoundEnd -> ...
+    /// Все изменения транслируются через EventBus.
+    /// </summary>
+    public partial class GameManager : Node
     {
-        Lobby,      // Ожидание игроков
-        PvE,        // Зачистка мобов на раздельных аренах
-        Shop,       // Магазин между раундами
-        Chaos,      // Рулетка хаоса
-        PvP,        // Дуэль на общей арене
-        RoundEnd    // Конец раунда, подсчёт очков
-    }
-
-    // Текущая фаза (только чтение снаружи)
-    public GamePhase CurrentPhase { get; private set; } = GamePhase.Lobby;
-
-    // Счёт побед: ключ = id игрока, значение = количество побед
-    public int[] WinCount { get; private set; } = new int[2];
-
-    // Побед нужно для победы в матче
-    public const int WinsToWin = 3;
-
-    // Таймер текущей фазы
-    private float _phaseTimer = 0f;
-
-    // Длительность PvE фазы в секундах
-    public const float PvEDuration = 150f;
-
-    // Ссылка на EventBus (получаем через автозагрузку)
-    private EventBus _eventBus;
-
-    public override void _Ready()
-    {
-        // Получаем EventBus из автозагрузки Godot
-        _eventBus = GetNode<EventBus>("/root/EventBus");
-        GD.Print("GameManager: готов");
-    }
-
-    public override void _Process(double delta)
-    {
-        // Таймер работает только во время PvE
-        if (CurrentPhase == GamePhase.PvE)
+        // Фазы игрового цикла
+        public enum GamePhase
         {
-            _phaseTimer -= (float)delta;
+            Lobby,      // Ожидание игроков / стартовый экран
+            PvE,        // Зачистка мобов на раздельных аренах
+            Shop,       // Магазин между раундами
+            Chaos,      // Рулетка хаоса
+            PvP,        // Дуэль на общей арене
+            RoundEnd,   // Конец раунда, короткая пауза
+            MatchEnd    // Матч окончен, есть победитель
+        }
+
+        // Текущая фаза (только чтение снаружи)
+        public GamePhase CurrentPhase { get; private set; } = GamePhase.Lobby;
+
+        // Номер текущего раунда (начинается с 1 после StartMatch)
+        public int CurrentRound { get; private set; } = 0;
+
+        // Счёт побед: индекс = id игрока, значение = количество побед
+        public int[] WinCount { get; private set; } = new int[2];
+
+        // Побед нужно для победы в матче
+        public const int WinsToWin = 3;
+
+        // --- Длительности фаз (секунды). Экспортированы для тонкой настройки. ---
+        [Export] public float PvEDuration = 60f;
+        [Export] public float ShopDuration = 20f;
+        [Export] public float ChaosDuration = 5f;
+        [Export] public float RoundEndDuration = 3f;
+
+        // Автостарт матча при запуске сцены — удобно для оффлайн-теста.
+        // Отключить, когда появится лобби.
+        [Export] public bool AutoStartMatch = true;
+
+        // Таймер текущей фазы
+        private float _phaseTimer = 0f;
+        private bool _phaseTimerActive = false;
+
+        private EventBus _eventBus;
+
+        public override void _Ready()
+        {
+            _eventBus = GetNode<EventBus>("/root/EventBus");
+
+            if (AutoStartMatch)
+                CallDeferred(nameof(StartMatch));
+        }
+
+        public override void _Process(double delta)
+        {
+            if (!_phaseTimerActive) return;
+
+            _phaseTimer = Mathf.Max(0f, _phaseTimer - (float)delta);
+            _eventBus.EmitSignal(EventBus.SignalName.PhaseTimerChanged, _phaseTimer);
+
             if (_phaseTimer <= 0f)
             {
-                // Время вышло — переходим в магазин
-                ChangePhase(GamePhase.Shop);
+                _phaseTimerActive = false;
+                OnPhaseTimerFinished();
             }
         }
-    }
 
-    /// <summary>
-    /// Меняет фазу игры. Вызывать только на хосте.
-    /// </summary>
-    public void ChangePhase(GamePhase newPhase)
-    {
-        CurrentPhase = newPhase;
-        _phaseTimer = newPhase == GamePhase.PvE ? PvEDuration : 0f;
+        // --- Управление матчем ---
 
-        GD.Print($"GameManager: фаза изменена на {newPhase}");
-
-        // Оповещаем все системы через EventBus
-        _eventBus.EmitSignal(EventBus.SignalName.PhaseChanged, (int)newPhase);
-    }
-
-    /// <summary>
-    /// Засчитывает победу игроку. Возвращает true если матч окончен.
-    /// </summary>
-    public bool AddWin(int playerId)
-    {
-        WinCount[playerId]++;
-        GD.Print($"GameManager: игрок {playerId} выиграл раунд. Счёт: {WinCount[0]}:{WinCount[1]}");
-
-        if (WinCount[playerId] >= WinsToWin)
+        /// <summary>
+        /// Начинает новый матч: сбрасывает счёт и запускает первый раунд.
+        /// </summary>
+        public void StartMatch()
         {
-            GD.Print($"GameManager: игрок {playerId} победил в матче!");
-            return true;
+            WinCount = new int[2];
+            CurrentRound = 0;
+            StartNextRound();
         }
 
-        return false;
-    }
+        /// <summary>
+        /// Запускает следующий раунд с фазы PvE.
+        /// </summary>
+        public void StartNextRound()
+        {
+            CurrentRound++;
+            _eventBus.EmitSignal(EventBus.SignalName.RoundStarted, CurrentRound);
+            ChangePhase(GamePhase.PvE);
+        }
 
-    /// <summary>
-    /// Сбрасывает счёт и возвращает в лобби.
-    /// </summary>
-    public void ResetMatch()
-    {
-        WinCount = new int[2];
-        ChangePhase(GamePhase.Lobby);
+        /// <summary>
+        /// Меняет фазу игры. В оффлайн-режиме это единственная точка смены фазы.
+        /// </summary>
+        public void ChangePhase(GamePhase newPhase)
+        {
+            CurrentPhase = newPhase;
+            _phaseTimer = GetPhaseDuration(newPhase);
+            _phaseTimerActive = _phaseTimer > 0f;
+
+            // Оповещаем все системы через EventBus
+            _eventBus.EmitSignal(EventBus.SignalName.PhaseChanged, (int)newPhase);
+            _eventBus.EmitSignal(EventBus.SignalName.PhaseTimerChanged, _phaseTimer);
+        }
+
+        /// <summary>
+        /// Завершает дуэль: засчитывает победу и решает, продолжать матч или закончить.
+        /// Вызывается из DuelSystem (или дебаг-клавишей) только во время PvP.
+        /// </summary>
+        public void EndDuel(int winnerPlayerId)
+        {
+            if (CurrentPhase != GamePhase.PvP)
+            {
+                GD.PrintErr($"GameManager: EndDuel вызван вне фазы PvP (текущая: {CurrentPhase})");
+                return;
+            }
+
+            if (!IsValidPlayerId(winnerPlayerId))
+            {
+                GD.PrintErr($"GameManager: EndDuel с некорректным id игрока {winnerPlayerId}");
+                return;
+            }
+
+            WinCount[winnerPlayerId]++;
+            _eventBus.EmitSignal(EventBus.SignalName.RoundEnded, winnerPlayerId);
+
+            if (WinCount[winnerPlayerId] >= WinsToWin)
+                EndMatch(winnerPlayerId);
+            else
+                ChangePhase(GamePhase.RoundEnd);
+        }
+
+        /// <summary>
+        /// Сбрасывает матч и возвращает в лобби.
+        /// </summary>
+        public void ResetMatch()
+        {
+            WinCount = new int[2];
+            CurrentRound = 0;
+            ChangePhase(GamePhase.Lobby);
+        }
+
+        /// <summary>
+        /// Сколько секунд осталось до конца текущей фазы (0 если без таймера).
+        /// </summary>
+        public float GetPhaseTimeLeft() => _phaseTimer;
+
+        // --- Внутреннее ---
+
+        // Вызывается, когда таймер фазы дошёл до нуля — автоматический переход дальше.
+        private void OnPhaseTimerFinished()
+        {
+            switch (CurrentPhase)
+            {
+                case GamePhase.PvE:
+                    ChangePhase(GamePhase.Shop);
+                    break;
+                case GamePhase.Shop:
+                    ChangePhase(GamePhase.Chaos);
+                    break;
+                case GamePhase.Chaos:
+                    ChangePhase(GamePhase.PvP);
+                    break;
+                case GamePhase.RoundEnd:
+                    StartNextRound();
+                    break;
+                // PvP завершается через EndDuel, у Lobby/MatchEnd нет таймера.
+            }
+        }
+
+        private void EndMatch(int winnerPlayerId)
+        {
+            ChangePhase(GamePhase.MatchEnd);
+            _eventBus.EmitSignal(EventBus.SignalName.MatchEnded, winnerPlayerId);
+        }
+
+        // Длительность фазы. PvP длится до победы, Lobby/MatchEnd — без таймера.
+        private float GetPhaseDuration(GamePhase phase)
+        {
+            return phase switch
+            {
+                GamePhase.PvE => PvEDuration,
+                GamePhase.Shop => ShopDuration,
+                GamePhase.Chaos => ChaosDuration,
+                GamePhase.RoundEnd => RoundEndDuration,
+                _ => 0f
+            };
+        }
+
+        private bool IsValidPlayerId(int playerId)
+        {
+            return playerId >= 0 && playerId < WinCount.Length;
+        }
     }
 }

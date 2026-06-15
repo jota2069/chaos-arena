@@ -1,7 +1,12 @@
 using Godot;
+using ChaosArena.entities.player;
 
 namespace ChaosArena.entities.enemies
 {
+    /// <summary>
+    /// Обычный враг: преследует ближайшего живого игрока, бьёт в ближнем бою
+    /// по кулдауну и отлетает (knockback) при получении урона.
+    /// </summary>
     public partial class BasicEnemy : EnemyBase
     {
         [Export] public float ContactDamage = 10f;

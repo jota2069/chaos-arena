@@ -1,13 +1,22 @@
 using Godot;
+using ChaosArena.autoload;
 
 namespace ChaosArena.entities.enemies
 {
+    /// <summary>
+    /// Базовый класс врага: HP, мигание при уроне, смерть и награда владельцу арены.
+    /// BasicEnemy и другие типы наследуются от него.
+    /// </summary>
     public abstract partial class EnemyBase : CharacterBody2D
     {
         [Export] public float MaxHealth = 30f;
         [Export] public float MoveSpeed = 80f;
         [Export] public int MinReward = 5;
         [Export] public int MaxReward = 15;
+
+        // Id игрока-владельца арены: награда за убийство идёт ему.
+        // Спавнер выставляет это значение при создании врага.
+        [Export] public int OwnerPlayerId { get; set; } = 0;
 
         public float CurrentHealth { get; private set; }
         public bool IsDead { get; private set; }
@@ -36,8 +45,7 @@ namespace ChaosArena.entities.enemies
             if (IsDead || amount <= 0) return;
             
             CurrentHealth -= amount;
-            GD.Print($"[Enemy] HP: {CurrentHealth}/{MaxHealth}");
-            
+
             // Эффект мигания при получении урона
             if (Sprite != null)
             {
@@ -56,9 +64,8 @@ namespace ChaosArena.entities.enemies
             IsDead = true;
             
             int reward = GD.RandRange(MinReward, MaxReward);
-            _eventBus.EmitSignal(EventBus.SignalName.EnemyDied, GlobalPosition, reward);
-            GD.Print($"[Enemy] Died, reward: {reward}");
-            
+            _eventBus.EmitSignal(EventBus.SignalName.EnemyDied, GlobalPosition, reward, OwnerPlayerId);
+
             QueueFree();
         }
     }

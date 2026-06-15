@@ -3,6 +3,10 @@ using ChaosArena.entities.enemies;
 
 namespace ChaosArena.entities.weapons
 {
+    /// <summary>
+    /// Снаряд: летит по заданному направлению, наносит урон врагу при попадании
+    /// (по телу или хитбоксу) и самоуничтожается по таймеру. CollisionLayer=2, Mask=1|4.
+    /// </summary>
     public partial class Bullet : Area2D
     {
         [Export] public float Speed = 300f;
