@@ -1,6 +1,7 @@
 using Godot;
 using ChaosArena.autoload;
 using ChaosArena.entities.weapons;
+using ChaosArena.systems;
 
 namespace ChaosArena.entities.player
 {
@@ -16,6 +17,18 @@ namespace ChaosArena.entities.player
 
         public float CurrentHealth { get; private set; }
 
+        // --- Эффекты Оракула Хаоса (множители/флаги; потребляются боевыми системами) ---
+        public float DamageMultiplier { get; set; } = 1f;
+        public float DamageReceivedMultiplier { get; set; } = 1f;
+        public float SpeedMultiplier { get; set; } = 1f;
+        public float VampirismPercent { get; set; } = 0f;
+        public float GoldMultiplier { get; set; } = 1f;
+        public bool FireBullets { get; set; } = false;
+        public bool InvertControls { get; set; } = false;
+
+        // Базовое макс. HP (без бонусов Оракула) — чтобы корректно сбрасывать эффекты.
+        private float _baseMaxHealth;
+
         // Два слота оружия: 0 = фарм (PvE), 1 = дуэль (PvP)
         protected WeaponBase[] Weapons = new WeaponBase[2];
         protected int ActiveWeaponSlot = 0;
@@ -24,10 +37,14 @@ namespace ChaosArena.entities.player
 
         public override void _Ready()
         {
+            _baseMaxHealth = MaxHealth;
             CurrentHealth = MaxHealth;
             _eventBus = GetNode<EventBus>("/root/EventBus");
 
             OnReady();
+
+            // Игрок мог переспавниться в новой фазе — подтягиваем активные эффекты Оракула.
+            GetNodeOrNull<OracleSystem>("/root/OracleSystem")?.ReapplyTo(this);
         }
 
         public bool IsDead { get; private set; } = false;
@@ -56,6 +73,32 @@ namespace ChaosArena.entities.player
         {
             CurrentHealth = Mathf.Min(MaxHealth, CurrentHealth + amount);
             _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
+        }
+
+        /// <summary>
+        /// Урон, который не может убить (HP остаётся минимум 1). Для карты «Жнец».
+        /// </summary>
+        public void TakeNonLethalDamage(float amount)
+        {
+            if (IsDead) return;
+            float safe = Mathf.Min(amount, CurrentHealth - 1f);
+            if (safe > 0f) TakeDamage(safe);
+        }
+
+        /// <summary>
+        /// Сбрасывает все эффекты Оракула к значениям по умолчанию (начало раунда).
+        /// </summary>
+        public void ResetOracleEffects()
+        {
+            DamageMultiplier = 1f;
+            DamageReceivedMultiplier = 1f;
+            SpeedMultiplier = 1f;
+            VampirismPercent = 0f;
+            GoldMultiplier = 1f;
+            FireBullets = false;
+            InvertControls = false;
+            MaxHealth = _baseMaxHealth;
+            Modulate = Colors.White;
         }
 
         /// <summary>

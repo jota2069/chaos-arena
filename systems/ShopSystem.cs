@@ -169,6 +169,23 @@ namespace ChaosArena.systems
             return true;
         }
 
+        /// <summary>Меняет оружие обоих слотов между игроками (карта Оракула «Обмен»).</summary>
+        public void SwapWeapons(int playerA, int playerB)
+        {
+            if (!IsValidPlayer(playerA) || !IsValidPlayer(playerB)) return;
+            var a = _inventory[playerA].WeaponSlots;
+            var b = _inventory[playerB].WeaponSlots;
+            (a[0], b[0]) = (b[0], a[0]);
+            (a[1], b[1]) = (b[1], a[1]);
+        }
+
+        /// <summary>Снимает оружие из слота игрока (карта Оракула «Проклятие Оружия»).</summary>
+        public void ClearWeaponSlot(int playerId, int slot)
+        {
+            if (!IsValidPlayer(playerId) || slot < 0 || slot > 1) return;
+            _inventory[playerId].WeaponSlots[slot] = null;
+        }
+
         /// <summary>Сбрасывает инвентари и кэш товаров (на новый матч).</summary>
         public void ResetForNewMatch()
         {

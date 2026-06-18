@@ -30,5 +30,9 @@ namespace ChaosArena.autoload
 
         // --- Хаос ---
         [Signal] public delegate void ChaosEffectAppliedEventHandler(string effectId, int targetPlayerId);
+
+        // --- Оракул Хаоса ---
+        [Signal] public delegate void OracleCardDrawnEventHandler(int playerId, int cardId);
+        [Signal] public delegate void OracleEffectAppliedEventHandler(int playerId, string effectId);
     }
 }
