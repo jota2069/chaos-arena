@@ -44,6 +44,13 @@ namespace ChaosArena.systems
 
             // C#-стиль подписки (соглашение CLAUDE.md), отписка в _ExitTree.
             _eventBus.PhaseChanged += OnPhaseChanged;
+
+            // Сцена арены грузится уже ПОСЛЕ PhaseChanged(PvE) (смена сцен по фазе
+            // через SceneLoader), поэтому этот сигнал спавнер пропускает. Если на
+            // момент готовности фаза уже PvE — стартуем спавн сами.
+            var gm = GetNodeOrNull<GameManager>("/root/GameManager");
+            if (gm != null && gm.CurrentPhase == GameManager.GamePhase.PvE)
+                StartSpawning();
         }
 
         public override void _ExitTree()

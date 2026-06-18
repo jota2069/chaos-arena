@@ -21,6 +21,7 @@ EventBus="*uid://b0ktmg31vijf6"
 GameManager="*uid://bxn4q2c2pvo76"
 EconomyManager="*uid://c8q52gweyok36"
 NetworkManager="*res://autoload/NetworkManager.cs"
+SceneLoader="*res://systems/SceneLoader.cs"
 
 [dotnet]
 
