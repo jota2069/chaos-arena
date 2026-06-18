@@ -1,0 +1,110 @@
+[gd_scene format=3 uid="uid://cshopui00001"]
+
+[ext_resource type="Script" path="res://ui/ShopUI.cs" id="1"]
+[ext_resource type="Texture2D" path="res://assets/ui/shop/ui/shop_panel_bg.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/ui/shop/ui/shop_button_ready.png" id="3"]
+
+[node name="ShopUI" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dim" type="ColorRect" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.55)
+
+[node name="Panel" type="TextureRect" parent="Root"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -380.0
+offset_top = -280.0
+offset_right = 380.0
+offset_bottom = 280.0
+texture = ExtResource("2")
+expand_mode = 1
+stretch_mode = 0
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Root/Panel"]
+anchor_right = 1.0
+offset_top = 14.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(1, 0.843137, 0, 1)
+theme_override_font_sizes/font_size = 40
+text = "МАГАЗИН"
+horizontal_alignment = 1
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="GoldLabel" type="Label" parent="Root/Panel"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -250.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 46.0
+theme_override_colors/font_color = Color(1, 0.843137, 0, 1)
+theme_override_font_sizes/font_size = 16
+text = "Золото: 0"
+horizontal_alignment = 2
+vertical_alignment = 1
+mouse_filter = 2
+
+[node name="Tabs" type="HBoxContainer" parent="Root/Panel"]
+anchor_right = 1.0
+offset_top = 70.0
+offset_bottom = 104.0
+alignment = 1
+theme_override_constants/separation = 14
+
+[node name="TabWeapons" type="Button" parent="Root/Panel/Tabs"]
+custom_minimum_size = Vector2(150, 32)
+theme_override_font_sizes/font_size = 14
+text = "ОРУЖИЕ"
+
+[node name="TabItems" type="Button" parent="Root/Panel/Tabs"]
+custom_minimum_size = Vector2(180, 32)
+theme_override_font_sizes/font_size = 14
+text = "РАСХОДНИКИ"
+
+[node name="TabSabotage" type="Button" parent="Root/Panel/Tabs"]
+custom_minimum_size = Vector2(150, 32)
+theme_override_font_sizes/font_size = 14
+text = "САБОТАЖ"
+
+[node name="ItemsGrid" type="GridContainer" parent="Root/Panel"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 30.0
+offset_top = 120.0
+offset_right = -30.0
+offset_bottom = -84.0
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+columns = 3
+
+[node name="ReadyButton" type="TextureButton" parent="Root/Panel"]
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -110.0
+offset_top = -72.0
+offset_right = 110.0
+offset_bottom = -14.0
+texture_normal = ExtResource("3")
+ignore_texture_size = true
+stretch_mode = 5

@@ -22,6 +22,7 @@ GameManager="*uid://bxn4q2c2pvo76"
 EconomyManager="*uid://c8q52gweyok36"
 NetworkManager="*res://autoload/NetworkManager.cs"
 SceneLoader="*res://systems/SceneLoader.cs"
+ShopSystem="*res://systems/ShopSystem.cs"
 
 [dotnet]
 
