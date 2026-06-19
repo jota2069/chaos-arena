@@ -1,29 +1,44 @@
+using System.Collections.Generic;
 using Godot;
 using ChaosArena.autoload;
+using ChaosArena.entities;
 using ChaosArena.entities.weapons;
 
 namespace ChaosArena.entities.player
 {
     /// <summary>
-    /// Локальный игрок: ввод WASD, стрельба ЛКМ по направлению мыши,
-    /// процедурная анимация (покачивание, тень, частицы пыли).
+    /// Локальный игрок: ввод WASD, стрельба ЛКМ по направлению мыши. Визуал собирается
+    /// из кода: AnimatedSprite2D тела (скин по PlayerId — синий/красный), WeaponHolder с
+    /// оружием (вращается к мыши, отдача), тень, пыль при беге, шейдер мигания при уроне.
+    ///
+    /// Примечание по арту: сгенерированные спрайтшиты — один фронтальный цикл ходьбы
+    /// (без отдельных видов вверх/вбок), поэтому направления различаются только зеркалом
+    /// (FlipH к мыши); анимации сведены к idle/run/hurt/death.
+    /// Клавиши 1–9 переключают оружие (тест WeaponHolder и визуала снарядов).
     /// </summary>
     public partial class LocalPlayer : PlayerBase
     {
-        // Путь к сцене пули
-        private readonly PackedScene _bulletScene = 
+        private const float BodyHeight = 30f;
+        private const float WeaponHoldDist = 14f;   // локальный сдвиг оружия от центра
+        private const float MuzzleDist = 20f;       // вынос точки выстрела вперёд
+        private const string WeaponsSheet = "res://assets/weapons/weapons_sheet.png";
+
+        private readonly PackedScene _bulletScene =
             GD.Load<PackedScene>("res://entities/weapons/Bullet.tscn");
 
-        // Задержка между выстрелами
         private float _shootCooldown;
         private const float ShootDelay = 0.3f;
 
-        // Анимация
-        private Sprite2D _sprite;
+        private AnimatedSprite2D _body;
         private Sprite2D _shadow;
         private CpuParticles2D _dust;
-        private float _animTime;
-        private Vector2 _lastDirection = Vector2.Right;
+        private Node2D _weaponHolder;
+        private Sprite2D _weaponSprite;
+        private ShaderMaterial _flashMat;
+
+        private int _currentWeapon;           // 0 = fire_staff
+        private float _hurtTime;              // пока > 0 — держим анимацию hurt
+        private Color _teamColor = new(0.9f, 0.9f, 1f);
 
         // Нужен, чтобы помечать пули владельцем только в фазе PvP.
         private GameManager _gameManager;
@@ -31,45 +46,122 @@ namespace ChaosArena.entities.player
         protected override void OnReady()
         {
             AddToGroup("players");
-
             _gameManager = GetNodeOrNull<GameManager>("/root/GameManager");
-            _sprite = GetNode<Sprite2D>("Sprite2D");
-            
-            // Создаем тень программно
-            _shadow = new Sprite2D();
-            _shadow.Texture = CreateShadowTexture();
-            _shadow.Position = new Vector2(0, 8);
-            _shadow.Scale = new Vector2(0.8f, 0.3f);
-            _shadow.Modulate = new Color(0, 0, 0, 0.3f);
-            _shadow.ZIndex = -1;
+
+            BuildShadow();
+            BuildBody();
+            BuildDust();
+            BuildWeapon();
+        }
+
+        // --- Сборка визуала ---
+
+        private void BuildBody()
+        {
+            string sheet = PlayerId == 1
+                ? "res://assets/characters/player_red.png"
+                : "res://assets/characters/player_blue.png";
+
+            _body = SpriteSheetSlicer.BuildBody(sheet, BodyHeight, PlayerPlan, "idle");
+            _body.SelfModulate = _teamColor;
+
+            var shader = GD.Load<Shader>("res://entities/player/flash.gdshader");
+            if (shader != null)
+            {
+                _flashMat = new ShaderMaterial { Shader = shader };
+                _body.Material = _flashMat;
+            }
+            AddChild(_body);
+        }
+
+        // План анимаций тела по числу найденных кадров N (последние 3 — смерть).
+        private static IEnumerable<AnimSpec> PlayerPlan(int n)
+        {
+            int death = Mathf.Clamp(n - 1, 1, 3);
+            int walkEnd = Mathf.Max(1, n - death);     // кадры ходьбы [0, walkEnd)
+            yield return new AnimSpec("idle", 6f, true, SpriteSheetSlicer.Range(0, Mathf.Min(2, walkEnd)));
+            yield return new AnimSpec("run", 10f, true, SpriteSheetSlicer.Range(0, walkEnd));
+            yield return new AnimSpec("hurt", 8f, false, SpriteSheetSlicer.Range(0, Mathf.Min(2, walkEnd)));
+            yield return new AnimSpec("death", 6f, false, SpriteSheetSlicer.Range(walkEnd, death));
+        }
+
+        private void BuildShadow()
+        {
+            _shadow = new Sprite2D
+            {
+                Texture = CreateShadowTexture(),
+                Position = new Vector2(0, 12),
+                Scale = new Vector2(1.6f, 0.7f),
+                Modulate = new Color(0, 0, 0, 0.35f),
+                ZIndex = -1,
+            };
             AddChild(_shadow);
-            
-            // Создаем частицы пыли программно
-            _dust = new CpuParticles2D();
-            _dust.Position = new Vector2(0, 6);
-            _dust.Amount = 8;
-            _dust.Lifetime = 0.3f;
-            _dust.OneShot = true;
-            _dust.Explosiveness = 0.5f;
-            _dust.Direction = new Vector2(0, -1);
-            _dust.Spread = 30f;
-            _dust.Gravity = new Vector2(0, 50);
-            _dust.InitialVelocityMin = 20f;
-            _dust.InitialVelocityMax = 40f;
-            _dust.ScaleAmountMin = 0.5f;
-            _dust.ScaleAmountMax = 1f;
-            _dust.Modulate = new Color(0.8f, 0.7f, 0.6f, 0.6f);
-            _dust.Emitting = false;
+        }
+
+        private void BuildDust()
+        {
+            _dust = new CpuParticles2D
+            {
+                Texture = Fx.DotTexture(),
+                Position = new Vector2(0, 12),
+                Amount = 12,
+                Lifetime = 0.35f,
+                OneShot = false,
+                Emitting = false,
+                Direction = new Vector2(0, -1),
+                Spread = 40f,
+                Gravity = new Vector2(0, 30),
+                InitialVelocityMin = 8f,
+                InitialVelocityMax = 24f,
+                ScaleAmountMin = 0.6f,
+                ScaleAmountMax = 1.4f,
+                Color = new Color(0.8f, 0.74f, 0.66f, 0.55f),
+            };
             AddChild(_dust);
         }
+
+        private void BuildWeapon()
+        {
+            _weaponHolder = new Node2D();
+            AddChild(_weaponHolder);
+
+            _weaponSprite = new Sprite2D { Position = new Vector2(WeaponHoldDist, 0) };
+            _weaponHolder.AddChild(_weaponSprite);
+
+            SetWeaponSprite(_currentWeapon);
+        }
+
+        /// <summary>Меняет спрайт оружия в руке на оружие №index (0..8) из weapons_sheet.</summary>
+        public void SetWeaponSprite(int index)
+        {
+            if (_weaponSprite == null) return;
+            var frames = SpriteSheetSlicer.GetFrames(WeaponsSheet);
+            if (frames.Count == 0) return;
+
+            int n = frames.Count;
+            int fi = Mathf.Clamp(Mathf.RoundToInt(index * (n - 1) / 8f), 0, n - 1);
+            var tex = frames[fi];
+            _weaponSprite.Texture = tex;
+            float s = tex.GetHeight() > 0 ? 16f / tex.GetHeight() : 0.12f;
+            _weaponSprite.Scale = new Vector2(s, s);
+        }
+
+        public override void SetTeamColor(Color color)
+        {
+            _teamColor = color;
+            if (_body != null) _body.SelfModulate = color;
+        }
+
+        // --- Цикл ---
 
         public override void _PhysicsProcess(double delta)
         {
             if (IsDead) return;
 
             float dt = (float)delta;
+            if (_hurtTime > 0f) _hurtTime -= dt;
 
-            // Движение. Эффекты: «Шут»/гравитация (инверсия), множитель скорости,
+            // Движение. Эффекты: инверсия управления, множитель скорости,
             // оглушение (саботаж) — стоп, ледяной пол (саботаж) — инерция.
             Vector2 direction = Input.GetVector("move_left", "move_right", "move_up", "move_down");
             if (IsStunned) direction = Vector2.Zero;
@@ -81,27 +173,11 @@ namespace ChaosArena.entities.player
             else
                 Velocity = targetVelocity;
             MoveAndSlide();
-            
-            UpdateAnimation(direction, dt);
-            
-            // Фиксация посоха в руке
-            var wandHolder = GetNodeOrNull<Marker2D>("Sprite2D/WandHolder");
-            if (wandHolder != null && _sprite != null)
-            {
-                Vector2 mousePos = GetGlobalMousePosition();
-                bool mouseRight = mousePos.X > GlobalPosition.X;
-                
-                // 1. Зеркалим персонажа в сторону мыши
-                float baseScale = Mathf.Abs(_sprite.Scale.Y);
-                _sprite.Scale = new Vector2(mouseRight ? baseScale : -baseScale, _sprite.Scale.Y);
-                
-                // 2. Позиция WandHolder в координатах спрайта
-                wandHolder.Position = new Vector2(231f, 20f);
-                
-                // 3. Сбрасываем вращение холдера, чтобы он наследовал только покачивание тела
-                wandHolder.Rotation = 0f;
-                wandHolder.Scale = new Vector2(1f, 1f);
-            }
+
+            bool moving = direction != Vector2.Zero && !IsStunned;
+            UpdateBodyAnim(moving);
+            UpdateWeapon();
+            UpdateDust(direction, moving);
 
             // Стрельба
             _shootCooldown -= dt;
@@ -112,47 +188,113 @@ namespace ChaosArena.entities.player
             }
         }
 
-        private void UpdateAnimation(Vector2 direction, float delta)
+        private void UpdateBodyAnim(bool moving)
         {
-            if (_sprite == null) return;
+            if (_body == null) return;
 
-            if (direction != Vector2.Zero)
+            // Лицом к мыши (зеркалим по X).
+            _body.FlipH = GetGlobalMousePosition().X < GlobalPosition.X;
+
+            if (_hurtTime > 0f) return; // не перебиваем анимацию hurt
+
+            string want = moving ? "run" : "idle";
+            if (_body.Animation != want && _body.SpriteFrames != null && _body.SpriteFrames.HasAnimation(want))
+                _body.Play(want);
+        }
+
+        private void UpdateWeapon()
+        {
+            if (_weaponHolder == null) return;
+
+            float ang = (GetGlobalMousePosition() - GlobalPosition).Angle();
+            _weaponHolder.Rotation = ang;
+
+            // Чтобы оружие не было «вверх ногами» при прицеле влево.
+            if (_weaponSprite != null)
+                _weaponSprite.FlipV = Mathf.Abs(ang) > Mathf.Pi / 2f;
+        }
+
+        private void UpdateDust(Vector2 direction, bool moving)
+        {
+            if (_dust == null) return;
+            _dust.Emitting = moving;
+            if (moving) _dust.Direction = (-direction).Normalized();
+        }
+
+        // --- Урон / смерть (визуал) ---
+
+        protected override void OnDamaged(float amount)
+        {
+            FlashRed();
+            if (_body?.SpriteFrames != null && _body.SpriteFrames.HasAnimation("hurt"))
             {
-                _lastDirection = direction;
-                _animTime += delta * 15f;
-                
-                float targetRotation = direction.X * 0.2f;
-                _sprite.Rotation = Mathf.Lerp(_sprite.Rotation, targetRotation, 10f * delta);
-                
-                float bounce = Mathf.Abs(Mathf.Sin(_animTime)) * 3f;
-                _sprite.Position = new Vector2(0, -bounce);
-                
-                float pulse = 1f + Mathf.Abs(Mathf.Sin(_animTime * 2f)) * 0.05f;
-                float signX = Mathf.Sign(_sprite.Scale.X);
-                _sprite.Scale = new Vector2(signX * pulse * 0.1f, pulse * 0.1f);
-                
-                if (_dust != null && Mathf.Sin(_animTime) > 0.95f)
-                    _dust.Emitting = true;
-            }
-            else
-            {
-                _animTime = 0f;
-                _sprite.Rotation = Mathf.Lerp(_sprite.Rotation, 0f, 10f * delta);
-                _sprite.Position = Vector2.Zero;
-                
-                float breathe = 1f + Mathf.Sin((float)Time.GetTicksMsec() / 200f) * 0.02f;
-                float signX = Mathf.Sign(_sprite.Scale.X);
-                _sprite.Scale = new Vector2(signX * breathe * 0.1f, breathe * 0.1f);
+                _body.Play("hurt");
+                _hurtTime = 0.2f;
             }
         }
+
+        private void FlashRed()
+        {
+            if (_flashMat == null) return;
+            var t = CreateTween();
+            t.TweenProperty(_flashMat, "shader_parameter/flash_intensity", 1f, 0.1f);
+            t.TweenProperty(_flashMat, "shader_parameter/flash_intensity", 0f, 0.2f);
+        }
+
+        protected override void OnDeath()
+        {
+            SpawnDeathEcho();
+            Fx.DeathBurst(GetTree(), GlobalPosition, _teamColor, 24, 170f);
+        }
+
+        // Отдельный «труп», проигрывающий death и растворяющийся — тело игрока к этому
+        // моменту скрывается (логика возрождения), поэтому смерть показываем копией.
+        private void SpawnDeathEcho()
+        {
+            if (_body?.SpriteFrames == null) return;
+
+            var echo = new AnimatedSprite2D
+            {
+                SpriteFrames = _body.SpriteFrames,
+                Scale = _body.Scale,
+                FlipH = _body.FlipH,
+                SelfModulate = _teamColor,
+                Position = GlobalPosition,
+                ZIndex = 5,
+            };
+            echo.Play(echo.SpriteFrames.HasAnimation("death") ? "death" : "idle");
+            echo.Ready += () =>
+            {
+                var t = echo.CreateTween();
+                t.TweenInterval(0.4);
+                t.TweenProperty(echo, "modulate:a", 0f, 0.4f);
+                t.TweenCallback(Callable.From(echo.QueueFree));
+            };
+            (GetTree()?.CurrentScene ?? GetTree()?.Root)?.CallDeferred(Node.MethodName.AddChild, echo);
+        }
+
+        // --- Тест: переключение оружия клавишами 1–9 ---
+
+        public override void _Input(InputEvent @event)
+        {
+            if (@event is not InputEventKey k || !k.Pressed || k.Echo) return;
+            int idx = (int)k.Keycode - (int)Key.Key1;
+            if (idx >= 0 && idx < 9)
+            {
+                _currentWeapon = idx;
+                SetWeaponSprite(idx);
+            }
+        }
+
+        // --- Стрельба ---
 
         private void Shoot()
         {
             if (_bulletScene == null) return;
 
-            var wandHolder = GetNodeOrNull<Marker2D>("Sprite2D/WandHolder");
-            Vector2 spawnPos = (wandHolder != null && _sprite != null)
-                ? wandHolder.GlobalPosition
+            Vector2 forward = Vector2.Right.Rotated(_weaponHolder?.Rotation ?? 0f);
+            Vector2 spawnPos = _weaponHolder != null
+                ? _weaponHolder.GlobalPosition + forward * MuzzleDist
                 : GlobalPosition;
 
             Vector2 direction = (GetGlobalMousePosition() - spawnPos).Normalized();
@@ -163,14 +305,25 @@ namespace ChaosArena.entities.player
             // «Эхо Выстрела» (камбэк): дубль под углом 15°.
             if (EchoShot)
                 FireBullet(direction.Rotated(Mathf.DegToRad(15f)), spawnPos);
+
+            PlayRecoil();
         }
 
-        // Создаёт и настраивает одну пулю (включая боевые эффекты Оракула в PvP).
+        private void PlayRecoil()
+        {
+            if (_weaponSprite == null) return;
+            var t = CreateTween();
+            t.TweenProperty(_weaponSprite, "position:x", WeaponHoldDist - 8f, 0.05f);
+            t.TweenProperty(_weaponSprite, "position:x", WeaponHoldDist, 0.1f);
+        }
+
+        // Создаёт и настраивает одну пулю (включая визуал и боевые эффекты Оракула в PvP).
         private void FireBullet(Vector2 direction, Vector2 spawnPos)
         {
             var bullet = _bulletScene.Instantiate<Bullet>();
             bullet.GlobalPosition = spawnPos;
             bullet.Init(direction);
+            bullet.SetVisual(WeaponVisual(_currentWeapon));
 
             if (_gameManager != null && _gameManager.CurrentPhase == GameManager.GamePhase.PvP)
             {
@@ -186,6 +339,20 @@ namespace ChaosArena.entities.player
 
             GetTree().Root.AddChild(bullet);
         }
+
+        // Сопоставление оружия (0..8) визуалу снаряда.
+        private static Bullet.Visual WeaponVisual(int idx) => idx switch
+        {
+            0 => Bullet.Visual.Fire,       // fire_staff
+            1 => Bullet.Visual.Ice,        // ice_crossbow
+            2 => Bullet.Visual.Lightning,  // lightning_wand
+            3 => Bullet.Visual.Dark,       // necro_staff
+            4 => Bullet.Visual.Bullet,     // shadow_dagger
+            5 => Bullet.Visual.Bullet,     // sniper_musket
+            6 => Bullet.Visual.Grenade,    // chaos_launcher
+            7 => Bullet.Visual.Portal,     // portal_gun
+            _ => Bullet.Visual.Default,    // mirror_shield и пр.
+        };
 
         // Доводит направление к ближайшей цели на AutoAimPercent% (0 => без изменений).
         private Vector2 ApplyAutoAim(Vector2 direction, Vector2 from)

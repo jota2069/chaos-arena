@@ -1,8 +1,6 @@
 [gd_scene format=3 uid="uid://b0idaag6co4fs"]
 
 [ext_resource type="Script" uid="uid://ccs6t7gl74gh0" path="res://entities/player/LocalPlayer.cs" id="1_7a2jn"]
-[ext_resource type="Texture2D" uid="uid://dijxw6pg1qcgh" path="res://assets/player.png" id="2_7a2jn"]
-[ext_resource type="Texture2D" uid="uid://c76f01y2swcm8" path="res://assets/wand.png" id="3_kqvpx"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_g2sw8"]
 size = Vector2(12, 12)
@@ -13,18 +11,6 @@ script = ExtResource("1_7a2jn")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=929863311]
 shape = SubResource("RectangleShape2D_g2sw8")
-
-[node name="Sprite2D" type="Sprite2D" parent="." unique_id=391177421]
-scale = Vector2(0.1, 0.1)
-texture = ExtResource("2_7a2jn")
-
-[node name="WandHolder" type="Marker2D" parent="Sprite2D" unique_id=1526685526]
-position = Vector2(50, 20)
-
-[node name="Wand" type="Sprite2D" parent="Sprite2D/WandHolder" unique_id=999999999]
-scale = Vector2(0.5, 0.5)
-texture = ExtResource("3_kqvpx")
-offset = Vector2(-8, 0)
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=298686031]
 zoom = Vector2(2, 2)

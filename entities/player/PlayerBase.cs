@@ -110,6 +110,26 @@ namespace ChaosArena.entities.player
         // Дочерние классы переопределяют для своей инициализации
         protected virtual void OnReady() { }
 
+        // Визуальные хуки (переопределяет LocalPlayer): срабатывают при фактическом
+        // получении урона и при смерти. Базовая логика HP/сети их не использует.
+        protected virtual void OnDamaged(float amount) { }
+        protected virtual void OnDeath() { }
+
+        /// <summary>Командный цвет (PvP). Переопределяет LocalPlayer (тинт тела).</summary>
+        public virtual void SetTeamColor(Color color) { }
+
+        /// <summary>
+        /// Временное замедление (паутина Паука и т.п.): множит скорость на factor
+        /// (0..1) на seconds секунд, затем восстанавливает.
+        /// </summary>
+        public void ApplySlow(float factor, float seconds)
+        {
+            if (factor <= 0f || factor >= 1f || seconds <= 0f) return;
+            SpeedMultiplier *= factor;
+            var timer = GetTree().CreateTimer(seconds);
+            timer.Timeout += () => { if (GodotObject.IsInstanceValid(this)) SpeedMultiplier /= factor; };
+        }
+
         /// <summary>
         /// Наносит урон игроку.
         /// </summary>
@@ -139,6 +159,8 @@ namespace ChaosArena.entities.player
 
             if (CurrentHealth <= 0f)
                 Die();
+            else if (amount > 0f)
+                OnDamaged(amount); // визуал: мигание + анимация hurt (LocalPlayer)
         }
 
         /// <summary>
@@ -317,6 +339,9 @@ namespace ChaosArena.entities.player
         {
             if (IsDead) return; // защита от двойного вызова
             IsDead = true;
+
+            OnDeath(); // визуал смерти (частицы/«труп») до скрытия тела
+
             _eventBus.EmitSignal(EventBus.SignalName.PlayerDied, PlayerId);
 
             // Скрываем игрока пока нет системы возрождения

@@ -363,10 +363,9 @@ namespace ChaosArena.scenes
             p.GlobalPosition = pos;
             p.Heal(p.MaxHealth); // полный HP с учётом «Железной Кожи»
 
-            // Цвет команды — на дочерний спрайт (SelfModulate), чтобы не конфликтовать
-            // с Modulate узла (мигание неуязвимости / «Призраки»).
-            var sprite = p.GetNodeOrNull<Sprite2D>("Sprite2D");
-            if (sprite != null) sprite.SelfModulate = tint;
+            // Цвет команды — на тело игрока (SelfModulate внутри LocalPlayer), чтобы не
+            // конфликтовать с Modulate узла (мигание неуязвимости / «Призраки»).
+            p.SetTeamColor(tint);
 
             // Гасим персональную камеру игрока — используем общую обзорную.
             var cam = p.GetNodeOrNull<Camera2D>("Camera2D");

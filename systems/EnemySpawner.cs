@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Collections.Generic;
 using ChaosArena.autoload;
 using ChaosArena.entities.enemies;
@@ -12,7 +13,18 @@ namespace ChaosArena.systems
     /// </summary>
     public partial class EnemySpawner : Node2D
     {
+        // Легаси-поле (необязательное): враги теперь создаются из кода фабриками ниже.
         [Export] public PackedScene EnemyScene;
+
+        // Все 5 типов мобов. Волна берёт случайный тип из списка.
+        private static readonly Func<EnemyBase>[] EnemyFactories =
+        {
+            () => new SkeletonWarrior(),
+            () => new ZombieBrute(),
+            () => new Bat(),
+            () => new GhostMage(),
+            () => new GiantSpider(),
+        };
 
         // Id игрока-владельца этой арены — передаётся каждому врагу.
         [Export] public int OwnerPlayerId { get; set; } = 0;
@@ -38,9 +50,6 @@ namespace ChaosArena.systems
                 GD.PrintErr("[EnemySpawner] EventBus не найден!");
                 return;
             }
-
-            if (EnemyScene == null)
-                GD.PrintErr("[EnemySpawner] EnemyScene не задана в инспекторе!");
 
             // C#-стиль подписки (соглашение CLAUDE.md), отписка в _ExitTree.
             _eventBus.PhaseChanged += OnPhaseChanged;
@@ -113,7 +122,7 @@ namespace ChaosArena.systems
 
         private void SpawnWave()
         {
-            if (_activeEnemies.Count >= MaxEnemies || EnemyScene == null) return;
+            if (_activeEnemies.Count >= MaxEnemies) return;
 
             int count = GD.RandRange(MinPerWave, MaxPerWave);
 
@@ -123,7 +132,7 @@ namespace ChaosArena.systems
 
                 Vector2 basePos = _spawnPositions[GD.RandRange(0, _spawnPositions.Count - 1)];
 
-                var enemy = EnemyScene.Instantiate<EnemyBase>();
+                var enemy = EnemyFactories[GD.RandRange(0, EnemyFactories.Length - 1)]();
 
                 // Владелец арены — чтобы награда ушла нужному игроку.
                 enemy.OwnerPlayerId = OwnerPlayerId;
