@@ -29,9 +29,13 @@ namespace ChaosArena.scenes
 
         private void OnMenuPressed()
         {
-            // Сброс в Lobby. Отдельной сцены меню пока нет — SceneLoader
-            // фазу Lobby не переключает, экран останется до появления MainMenu.
+            // Завершаем сетевую сессию (если была), сбрасываем матч и возвращаемся
+            // в Главное меню.
+            var net = GetNodeOrNull<NetworkManager>("/root/NetworkManager");
+            if (net != null && net.IsNetworked) net.Disconnect();
+
             _gameManager.ResetMatch();
+            GetTree().ChangeSceneToFile("res://scenes/MainMenu.tscn");
         }
     }
 }

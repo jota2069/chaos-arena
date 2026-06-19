@@ -176,6 +176,9 @@ namespace ChaosArena.entities.player
             {
                 bullet.OwnerPlayerId = PlayerId;
                 bullet.Damage *= DamageMultiplier;
+                bullet.Damage *= ConsumeClassCrit();                       // Ассасин: каждый 3й выстрел крит x2
+                if (ClassFuryBelow30 && CurrentHealth < MaxHealth * 0.3f)  // Воин: ярость при HP < 30%
+                    bullet.Damage *= 1.3f;
                 bullet.Incendiary = FireBullets;
                 bullet.Vampirism = VampirismPercent;
                 bullet.SetOwner(this);

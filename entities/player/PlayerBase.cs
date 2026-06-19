@@ -5,6 +5,9 @@ using ChaosArena.systems;
 
 namespace ChaosArena.entities.player
 {
+    /// <summary>Игровой класс (= аватар профиля). Задаёт HP, скорость и пассивку.</summary>
+    public enum PlayerClass { Warrior, Mage, Rogue, Knight }
+
     /// <summary>
     /// Базовый класс игрока. Содержит общую логику HP и оружия.
     /// LocalPlayer и RemotePlayer наследуются от него.
@@ -16,6 +19,19 @@ namespace ChaosArena.entities.player
         [Export] public int PlayerId = 0;
 
         public float CurrentHealth { get; private set; }
+
+        // --- Класс игрока и его пассивки ---
+        /// <summary>Текущий игровой класс (по аватару профиля).</summary>
+        public PlayerClass Class { get; private set; } = PlayerClass.Warrior;
+        /// <summary>Воин: при HP &lt; 30% исходящий урон +30%.</summary>
+        public bool ClassFuryBelow30 { get; private set; }
+        /// <summary>Маг: +20% к шансу баффа Оракула (читается системой удачи Оракула — TODO).</summary>
+        public float ClassOracleLuckBonus { get; private set; }
+        /// <summary>Ассасин: каждый 3й выстрел — крит x2 (через <see cref="ConsumeClassCrit"/>).</summary>
+        public bool ClassCritEveryThird { get; private set; }
+        /// <summary>Рыцарь: сколько ближайших ударов за раунд ещё будут поглощены.</summary>
+        public int ClassHitAbsorb { get; set; }
+        private int _classShotCounter; // счётчик выстрелов для крита Ассасина
 
         // --- Эффекты Оракула Хаоса (множители/флаги; потребляются боевыми системами) ---
         public float DamageMultiplier { get; set; } = 1f;
@@ -67,10 +83,26 @@ namespace ChaosArena.entities.player
 
             OnReady();
 
+            // Класс (= аватар профиля) задаёт базовые HP/скорость. Применяем ДО
+            // эффектов Камбэка/Оракула, чтобы их бонусы стакались поверх базы класса.
+            ApplyClassFromProfile();
+
             // Подтягиваем персистентные эффекты. Сначала Камбэк (ставит базовые
             // множители/BonusMaxHealth), затем Оракул (стакается поверх баз).
             GetNodeOrNull<ComebackSystem>("/root/ComebackSystem")?.ReapplyTo(this);
             GetNodeOrNull<OracleSystem>("/root/OracleSystem")?.ReapplyTo(this);
+        }
+
+        // Берёт класс из локального профиля и применяет — только своему (локальному)
+        // игроку. Класс соперника по сети назначит NetworkManager (TODO ЭТАП 2).
+        private void ApplyClassFromProfile()
+        {
+            int localId = GetNodeOrNull<NetworkManager>("/root/NetworkManager")?.LocalPlayerId ?? 0;
+            if (PlayerId != localId) return;
+
+            var profile = GetNodeOrNull<ProfileManager>("/root/ProfileManager");
+            if (profile == null) return;
+            ApplyClassStats(ClassFromString(profile.GetClass()));
         }
 
         public bool IsDead { get; private set; } = false;
@@ -84,6 +116,13 @@ namespace ChaosArena.entities.player
         public void TakeDamage(float amount)
         {
             if (IsDead || IsInvulnerable) return;
+
+            // Рыцарь: первые удары за раунд поглощаются классовой бронёй.
+            if (ClassHitAbsorb > 0 && amount > 0f)
+            {
+                ClassHitAbsorb--;
+                return;
+            }
 
             // Щит-бонус из PvP поглощает один источник урона целиком.
             if (ShieldCharges > 0 && amount > 0f)
@@ -140,6 +179,67 @@ namespace ChaosArena.entities.player
             InvertControls = false;
             MaxHealth = _baseMaxHealth + BonusMaxHealth;
             Modulate = Colors.White;
+        }
+
+        /// <summary>
+        /// Применяет характеристики класса: базовые HP/скорость и пассивку. Аватар
+        /// профиля = класс (см. CLAUDE.md). Базовое HP кладётся в _baseMaxHealth, чтобы
+        /// бонусы Камбэка/Оракула стакались поверх. Лечит до полного HP класса.
+        /// </summary>
+        public void ApplyClassStats(PlayerClass cls)
+        {
+            Class = cls;
+
+            // Сброс классовых пассивок (на случай переназначения класса).
+            ClassFuryBelow30 = false;
+            ClassOracleLuckBonus = 0f;
+            ClassCritEveryThird = false;
+            ClassHitAbsorb = 0;
+            _classShotCounter = 0;
+
+            switch (cls)
+            {
+                case PlayerClass.Warrior:                  // ярость
+                    _baseMaxHealth = 130f; MoveSpeed = 90f;
+                    ClassFuryBelow30 = true;
+                    break;
+                case PlayerClass.Mage:                     // удача Оракула
+                    _baseMaxHealth = 80f; MoveSpeed = 100f;
+                    ClassOracleLuckBonus = 0.2f;
+                    break;
+                case PlayerClass.Rogue:                    // крит
+                    _baseMaxHealth = 90f; MoveSpeed = 140f;
+                    ClassCritEveryThird = true;
+                    break;
+                case PlayerClass.Knight:                   // броня
+                    _baseMaxHealth = 120f; MoveSpeed = 70f;
+                    ClassHitAbsorb = 2;
+                    break;
+            }
+
+            MaxHealth = _baseMaxHealth + BonusMaxHealth;
+            CurrentHealth = MaxHealth;
+            _eventBus?.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
+        }
+
+        /// <summary>Преобразует строковое имя класса (warrior/mage/rogue/knight) в enum.</summary>
+        public static PlayerClass ClassFromString(string name) => name switch
+        {
+            "mage" => PlayerClass.Mage,
+            "rogue" => PlayerClass.Rogue,
+            "knight" => PlayerClass.Knight,
+            _ => PlayerClass.Warrior,
+        };
+
+        /// <summary>
+        /// Множитель крита для следующего выстрела (Ассасин: каждый 3й = x2, иначе x1).
+        /// Вызывается стреляющим кодом на каждый произведённый выстрел.
+        /// </summary>
+        public float ConsumeClassCrit()
+        {
+            if (!ClassCritEveryThird) return 1f;
+            _classShotCounter++;
+            return _classShotCounter % 3 == 0 ? 2f : 1f;
         }
 
         /// <summary>

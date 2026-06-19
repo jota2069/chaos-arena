@@ -34,5 +34,9 @@ namespace ChaosArena.autoload
         // --- Оракул Хаоса ---
         [Signal] public delegate void OracleCardDrawnEventHandler(int playerId, int cardId);
         [Signal] public delegate void OracleEffectAppliedEventHandler(int playerId, string effectId);
+
+        // --- Профиль игрока ---
+        [Signal] public delegate void ProfileLoadedEventHandler(string nickname, int avatarIndex);
+        [Signal] public delegate void StatsUpdatedEventHandler();
     }
 }

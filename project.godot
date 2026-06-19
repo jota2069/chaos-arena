@@ -27,6 +27,7 @@ OracleSystem="*res://systems/OracleSystem.cs"
 DebugPanel="*res://ui/DebugPanel.cs"
 SabotageSystem="*res://systems/SabotageSystem.cs"
 ComebackSystem="*res://systems/ComebackSystem.cs"
+ProfileManager="*res://autoload/ProfileManager.cs"
 
 [dotnet]
 

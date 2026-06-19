@@ -1,4 +1,5 @@
 using Godot;
+using ChaosArena.entities.player;
 
 namespace ChaosArena.autoload
 {
@@ -42,9 +43,9 @@ namespace ChaosArena.autoload
         [Export] public float ChaosDuration = 5f;
         [Export] public float RoundEndDuration = 3f;
 
-        // Автостарт матча при запуске сцены — удобно для оффлайн-теста.
-        // Отключить, когда появится лобби.
-        [Export] public bool AutoStartMatch = true;
+        // Автостарт матча при запуске. По умолчанию выключен: загрузочная сцена
+        // показывает Главное меню, а матч стартует из лобби (управляет Boot.cs).
+        [Export] public bool AutoStartMatch = false;
 
         // Таймер текущей фазы
         private float _phaseTimer = 0f;
@@ -85,7 +86,26 @@ namespace ChaosArena.autoload
         {
             WinCount = new int[2];
             CurrentRound = 0;
+            ApplyLocalClass();   // класс из профиля = аватар (CLAUDE.md)
             StartNextRound();
+        }
+
+        // Применяет класс из профиля локальному игроку, если он уже в сцене. Основное
+        // применение — в PlayerBase._Ready при спавне игрока; здесь — для уже
+        // существующего узла (например при рестарте матча без пересоздания сцены).
+        private void ApplyLocalClass()
+        {
+            var profile = GetNodeOrNull<ProfileManager>("/root/ProfileManager");
+            if (profile == null) return;
+
+            int localId = GetNodeOrNull<NetworkManager>("/root/NetworkManager")?.LocalPlayerId ?? 0;
+            var cls = PlayerBase.ClassFromString(profile.GetClass());
+            foreach (var node in GetTree().GetNodesInGroup("players"))
+                if (node is PlayerBase p && p.PlayerId == localId)
+                {
+                    p.ApplyClassStats(cls);
+                    break;
+                }
         }
 
         /// <summary>

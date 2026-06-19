@@ -19,6 +19,10 @@ namespace ChaosArena.ui
         private Label _currencyLabel;
         private EventBus _eventBus;
 
+        // Никнейм из профиля (вместо P0/P1) и иконка класса рядом с HP-баром.
+        private Label _nameLabel;
+        private TextureRect _classIcon;
+
         // Кнопка саботажа: показывается в PvE, если саботаж куплен и не активирован.
         private TextureButton _sabotageButton;
         private SabotageSystem _sabotage;
@@ -52,6 +56,7 @@ namespace ChaosArena.ui
             _sabotage = GetNodeOrNull<SabotageSystem>("/root/SabotageSystem");
             _gameManager = GetNodeOrNull<GameManager>("/root/GameManager");
             BuildSabotageButton();
+            BuildProfileWidgets();
 
             CallDeferred(nameof(InitFromState));
         }
@@ -73,6 +78,35 @@ namespace ChaosArena.ui
             _sabotageButton.OffsetTop = -92f; _sabotageButton.OffsetBottom = -20f;
             _sabotageButton.Pressed += ActivateSabotage;
             AddChild(_sabotageButton);
+        }
+
+        // Никнейм из профиля над HP-баром + иконка класса слева от него.
+        private void BuildProfileWidgets()
+        {
+            var profile = GetNodeOrNull<ProfileManager>("/root/ProfileManager");
+            int localId = GetNodeOrNull<NetworkManager>("/root/NetworkManager")?.LocalPlayerId ?? 0;
+            bool isLocal = PlayerId == localId && profile != null;
+
+            _classIcon = new TextureRect
+            {
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                OffsetLeft = 8f, OffsetTop = 4f, OffsetRight = 36f, OffsetBottom = 32f,
+            };
+            if (isLocal)
+                _classIcon.Texture = GD.Load<Texture2D>(profile.GetAvatarTexturePath());
+            AddChild(_classIcon);
+
+            _nameLabel = new Label
+            {
+                Text = isLocal ? profile.GetNickname() : $"Игрок {PlayerId + 1}",
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                OffsetLeft = 40f, OffsetTop = 0f, OffsetRight = 280f, OffsetBottom = 16f,
+            };
+            _nameLabel.AddThemeColorOverride("font_color", new Color(1f, 0.843f, 0f));
+            _nameLabel.AddThemeFontSizeOverride("font_size", 12);
+            AddChild(_nameLabel);
         }
 
         // G — активировать купленный саботаж во время PvE.
