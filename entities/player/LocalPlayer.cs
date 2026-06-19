@@ -1,4 +1,5 @@
 using Godot;
+using ChaosArena.autoload;
 using ChaosArena.entities.weapons;
 
 namespace ChaosArena.entities.player
@@ -24,10 +25,14 @@ namespace ChaosArena.entities.player
         private float _animTime;
         private Vector2 _lastDirection = Vector2.Right;
 
+        // Нужен, чтобы помечать пули владельцем только в фазе PvP.
+        private GameManager _gameManager;
+
         protected override void OnReady()
         {
             AddToGroup("players");
 
+            _gameManager = GetNodeOrNull<GameManager>("/root/GameManager");
             _sprite = GetNode<Sprite2D>("Sprite2D");
             
             // Создаем тень программно
@@ -64,9 +69,10 @@ namespace ChaosArena.entities.player
 
             float dt = (float)delta;
 
-            // Движение
+            // Движение (эффекты Оракула: инверсия управления «Шут», множитель скорости)
             Vector2 direction = Input.GetVector("move_left", "move_right", "move_up", "move_down");
-            Velocity = direction * MoveSpeed;
+            if (InvertControls) direction = -direction;
+            Velocity = direction * MoveSpeed * SpeedMultiplier;
             MoveAndSlide();
             
             UpdateAnimation(direction, dt);
@@ -152,6 +158,16 @@ namespace ChaosArena.entities.player
             var bullet = _bulletScene.Instantiate<Bullet>();
             bullet.GlobalPosition = spawnPos;
             bullet.Init(direction);
+
+            // В PvP помечаем пулю владельцем и навешиваем боевые эффекты Оракула.
+            if (_gameManager != null && _gameManager.CurrentPhase == GameManager.GamePhase.PvP)
+            {
+                bullet.OwnerPlayerId = PlayerId;
+                bullet.Damage *= DamageMultiplier;
+                bullet.Incendiary = FireBullets;
+                bullet.Vampirism = VampirismPercent;
+                bullet.SetOwner(this);
+            }
 
             GetTree().Root.AddChild(bullet);
         }

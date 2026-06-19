@@ -26,6 +26,12 @@ namespace ChaosArena.entities.player
         public bool FireBullets { get; set; } = false;
         public bool InvertControls { get; set; } = false;
 
+        // --- Боевые состояния PvP ---
+        /// <summary>Неуязвимость (3 сек после спавна/возрождения в PvP). Урон игнорируется.</summary>
+        public bool IsInvulnerable { get; set; } = false;
+        /// <summary>Заряды щита-бонуса: каждый поглощает один источник урона целиком.</summary>
+        public int ShieldCharges { get; set; } = 0;
+
         // Базовое макс. HP (без бонусов Оракула) — чтобы корректно сбрасывать эффекты.
         private float _baseMaxHealth;
 
@@ -57,7 +63,17 @@ namespace ChaosArena.entities.player
         /// </summary>
         public void TakeDamage(float amount)
         {
-            if (IsDead) return;
+            if (IsDead || IsInvulnerable) return;
+
+            // Щит-бонус из PvP поглощает один источник урона целиком.
+            if (ShieldCharges > 0 && amount > 0f)
+            {
+                ShieldCharges--;
+                return;
+            }
+
+            // Берсерк и прочие эффекты Оракула на получаемый урон.
+            amount *= DamageReceivedMultiplier;
 
             CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
             _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
@@ -81,8 +97,12 @@ namespace ChaosArena.entities.player
         public void TakeNonLethalDamage(float amount)
         {
             if (IsDead) return;
+            // Прямой слив HP мимо множителей/щита/неуязвимости — чтобы «Жнец»
+            // гарантированно не убивал даже при активном Берсерке.
             float safe = Mathf.Min(amount, CurrentHealth - 1f);
-            if (safe > 0f) TakeDamage(safe);
+            if (safe <= 0f) return;
+            CurrentHealth -= safe;
+            _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
         }
 
         /// <summary>
@@ -108,6 +128,49 @@ namespace ChaosArena.entities.player
         {
             if (slot < 0 || slot > 1) return;
             ActiveWeaponSlot = slot;
+        }
+
+        /// <summary>
+        /// Возрождает игрока в указанной точке: снимает смерть, включает обработку,
+        /// подтягивает эффекты Оракула (могут менять MaxHealth) и лечит до полного HP.
+        /// Неуязвимость после спавна выставляет вызывающая сторона (PvP-арена).
+        /// </summary>
+        public void Respawn(Vector2 globalPosition)
+        {
+            IsDead = false;
+            GlobalPosition = globalPosition;
+            Visible = true;
+            SetProcess(true);
+            SetPhysicsProcess(true);
+
+            GetNodeOrNull<OracleSystem>("/root/OracleSystem")?.ReapplyTo(this);
+            CurrentHealth = MaxHealth;
+            _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
+        }
+
+        /// <summary>
+        /// Поджог: наносит <paramref name="damagePerSecond"/> урона раз в секунду
+        /// в течение <paramref name="seconds"/> секунд (карта «Инферно» в PvP).
+        /// </summary>
+        public void Ignite(float damagePerSecond, float seconds)
+        {
+            if (IsDead || damagePerSecond <= 0f || seconds <= 0f) return;
+
+            int ticksLeft = Mathf.Max(1, Mathf.RoundToInt(seconds));
+            var timer = new Timer { WaitTime = 1.0, OneShot = false };
+            AddChild(timer);
+            timer.Timeout += () =>
+            {
+                if (IsDead || ticksLeft <= 0)
+                {
+                    timer.QueueFree();
+                    return;
+                }
+                TakeDamage(damagePerSecond);
+                ticksLeft--;
+                if (ticksLeft <= 0) timer.QueueFree();
+            };
+            timer.Start();
         }
 
         private void Die()

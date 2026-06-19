@@ -204,6 +204,19 @@ namespace ChaosArena.systems
             return names;
         }
 
+        /// <summary>
+        /// true, если у игрока в этом раунде активна карта с данным EffectId.
+        /// Используется PvP-ареной для эффектов уровня сцены (eclipse, end_of_times,
+        /// portal_chaos), которые не сводятся к множителям на узле игрока.
+        /// </summary>
+        public bool HasEffect(int playerId, string effectId)
+        {
+            if (!_activeCards.TryGetValue(playerId, out var ids)) return false;
+            foreach (int id in ids)
+                if (GetCard(id)?.EffectId == effectId) return true;
+            return false;
+        }
+
         // --- Сигналы ---
 
         private void OnPhaseChanged(int newPhase)
