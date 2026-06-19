@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cpanorpropalo1"]
+
+; Экран «Либо пан, либо пропал». Весь UI строится из кода в PanOrPropalo.cs.
+
+[ext_resource type="Script" path="res://scenes/PanOrPropalo.cs" id="1"]
+
+[node name="PanOrPropalo" type="CanvasLayer"]
+script = ExtResource("1")

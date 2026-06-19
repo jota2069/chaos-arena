@@ -43,6 +43,11 @@ namespace ChaosArena.systems
         };
 
         private readonly int[] _rerollsUsed = new int[2];
+
+        // Следующий крут гарантированно бафф (камбэк «Кристалл Удачи»). Хранится здесь,
+        // т.к. во время фазы Хаоса узла игрока в сцене нет — флаг на PlayerBase не прочесть.
+        private readonly bool[] _guaranteedBuff = new bool[2];
+
         private readonly RandomNumberGenerator _rng = new();
 
         private EventBus _eventBus;
@@ -80,12 +85,28 @@ namespace ChaosArena.systems
         public OracleCard GetCard(int id) => _byId.GetValueOrDefault(id);
         public int RerollsLeft(int playerId) => IsValid(playerId) ? MaxRerolls - _rerollsUsed[playerId] : 0;
 
-        /// <summary>Случайная карта; эмитит OracleCardDrawn.</summary>
+        /// <summary>Случайная карта; эмитит OracleCardDrawn. Учитывает гарантированный бафф.</summary>
         public OracleCard DrawRandom(int playerId)
         {
-            var card = _cards[_rng.RandiRange(0, _cards.Count - 1)];
+            OracleCard card;
+            if (IsValid(playerId) && _guaranteedBuff[playerId])
+            {
+                card = RandomCardOfType(OracleCardType.Buff);
+                _guaranteedBuff[playerId] = false; // одноразовый эффект
+            }
+            else
+            {
+                card = _cards[_rng.RandiRange(0, _cards.Count - 1)];
+            }
+
             _eventBus.EmitSignal(EventBus.SignalName.OracleCardDrawn, playerId, card.Id);
             return card;
+        }
+
+        /// <summary>Гарантирует, что следующий крут игрока выпадет баффом (камбэк «Кристалл Удачи»).</summary>
+        public void SetGuaranteedBuff(int playerId)
+        {
+            if (IsValid(playerId)) _guaranteedBuff[playerId] = true;
         }
 
         // --- Действия игрока ---
@@ -236,6 +257,14 @@ namespace ChaosArena.systems
             _activeCards[1].Clear();
             _rerollsUsed[0] = 0;
             _rerollsUsed[1] = 0;
+
+            // Гарантированный бафф выдаётся между раундами и тратится на круте, поэтому
+            // здесь не сбрасываем — кроме старта нового матча (первый раунд).
+            if (round == 1)
+            {
+                _guaranteedBuff[0] = false;
+                _guaranteedBuff[1] = false;
+            }
         }
 
         // --- Вспомогательное ---

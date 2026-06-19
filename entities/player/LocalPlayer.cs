@@ -69,10 +69,17 @@ namespace ChaosArena.entities.player
 
             float dt = (float)delta;
 
-            // Движение (эффекты Оракула: инверсия управления «Шут», множитель скорости)
+            // Движение. Эффекты: «Шут»/гравитация (инверсия), множитель скорости,
+            // оглушение (саботаж) — стоп, ледяной пол (саботаж) — инерция.
             Vector2 direction = Input.GetVector("move_left", "move_right", "move_up", "move_down");
+            if (IsStunned) direction = Vector2.Zero;
             if (InvertControls) direction = -direction;
-            Velocity = direction * MoveSpeed * SpeedMultiplier;
+
+            Vector2 targetVelocity = direction * MoveSpeed * SpeedMultiplier;
+            if (IceFloor)
+                Velocity = Velocity.Lerp(targetVelocity, 3f * dt); // скольжение
+            else
+                Velocity = targetVelocity;
             MoveAndSlide();
             
             UpdateAnimation(direction, dt);
@@ -144,22 +151,27 @@ namespace ChaosArena.entities.player
             if (_bulletScene == null) return;
 
             var wandHolder = GetNodeOrNull<Marker2D>("Sprite2D/WandHolder");
-            Vector2 spawnPos = GlobalPosition;
-            Vector2 mousePos = GetGlobalMousePosition();
+            Vector2 spawnPos = (wandHolder != null && _sprite != null)
+                ? wandHolder.GlobalPosition
+                : GlobalPosition;
 
-            if (wandHolder != null && _sprite != null)
-            {
-                // Снаряд спавнится четко из глобальной позиции холдера
-                spawnPos = wandHolder.GlobalPosition;
-            }
+            Vector2 direction = (GetGlobalMousePosition() - spawnPos).Normalized();
+            direction = ApplyAutoAim(direction, spawnPos); // «Глаз Охотника» (камбэк)
 
-            Vector2 direction = (mousePos - spawnPos).Normalized();
+            FireBullet(direction, spawnPos);
 
+            // «Эхо Выстрела» (камбэк): дубль под углом 15°.
+            if (EchoShot)
+                FireBullet(direction.Rotated(Mathf.DegToRad(15f)), spawnPos);
+        }
+
+        // Создаёт и настраивает одну пулю (включая боевые эффекты Оракула в PvP).
+        private void FireBullet(Vector2 direction, Vector2 spawnPos)
+        {
             var bullet = _bulletScene.Instantiate<Bullet>();
             bullet.GlobalPosition = spawnPos;
             bullet.Init(direction);
 
-            // В PvP помечаем пулю владельцем и навешиваем боевые эффекты Оракула.
             if (_gameManager != null && _gameManager.CurrentPhase == GameManager.GamePhase.PvP)
             {
                 bullet.OwnerPlayerId = PlayerId;
@@ -170,6 +182,47 @@ namespace ChaosArena.entities.player
             }
 
             GetTree().Root.AddChild(bullet);
+        }
+
+        // Доводит направление к ближайшей цели на AutoAimPercent% (0 => без изменений).
+        private Vector2 ApplyAutoAim(Vector2 direction, Vector2 from)
+        {
+            if (AutoAimPercent <= 0f) return direction;
+
+            Vector2? target = NearestTargetPosition(from);
+            if (target == null) return direction;
+
+            Vector2 toTarget = (target.Value - from).Normalized();
+            float t = Mathf.Clamp(AutoAimPercent / 100f, 0f, 1f);
+            return direction.Slerp(toTarget, t).Normalized();
+        }
+
+        // Ближайшая цель: в PvP — соперник, иначе — ближайший враг (по хитбоксам).
+        private Vector2? NearestTargetPosition(Vector2 from)
+        {
+            bool pvp = _gameManager != null && _gameManager.CurrentPhase == GameManager.GamePhase.PvP;
+            Vector2? best = null;
+            float bestDist = float.MaxValue;
+
+            if (pvp)
+            {
+                foreach (var node in GetTree().GetNodesInGroup("players"))
+                    if (node is PlayerBase p && p.PlayerId != PlayerId && !p.IsDead)
+                        Consider(p.GlobalPosition, from, ref best, ref bestDist);
+            }
+            else
+            {
+                foreach (var node in GetTree().GetNodesInGroup("enemy_hitboxes"))
+                    if (node is Node2D hb && IsInstanceValid(hb))
+                        Consider(hb.GlobalPosition, from, ref best, ref bestDist);
+            }
+            return best;
+        }
+
+        private static void Consider(Vector2 pos, Vector2 from, ref Vector2? best, ref float bestDist)
+        {
+            float d = from.DistanceSquaredTo(pos);
+            if (d < bestDist) { bestDist = d; best = pos; }
         }
 
         private Texture2D CreateShadowTexture()

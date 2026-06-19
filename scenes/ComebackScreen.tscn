@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://ccomebackscr01"]
+
+; Экран Камбэка. Весь UI строится из кода в ComebackScreen.cs.
+
+[ext_resource type="Script" path="res://scenes/ComebackScreen.cs" id="1"]
+
+[node name="ComebackScreen" type="CanvasLayer"]
+script = ExtResource("1")

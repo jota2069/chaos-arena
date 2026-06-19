@@ -60,6 +60,7 @@ namespace ChaosArena.scenes
         private GameManager _gameManager;
         private EventBus _eventBus;
         private OracleSystem _oracle;
+        private ComebackSystem _comeback;
 
         private PvpHud _hud;
         private TextureRect _bgRect;
@@ -78,6 +79,7 @@ namespace ChaosArena.scenes
             _gameManager = GetNode<GameManager>("/root/GameManager");
             _eventBus = GetNode<EventBus>("/root/EventBus");
             _oracle = GetNodeOrNull<OracleSystem>("/root/OracleSystem");
+            _comeback = GetNodeOrNull<ComebackSystem>("/root/ComebackSystem");
 
             _eventBus.PlayerDied += OnPlayerDied;
             _eventBus.PhaseChanged += OnPhaseChanged;
@@ -252,6 +254,21 @@ namespace ChaosArena.scenes
         {
             if (_duelOver || playerId is < 0 or > 1) return;
 
+            var dead = _players[playerId];
+
+            // «Воля к Жизни» / «Дар Отчаяния»: возрождение на месте без потери жизни.
+            if (dead != null && GodotObject.IsInstanceValid(dead) && dead.ReviveOnce)
+            {
+                _comeback?.ConsumeRevive(playerId);     // больше в этом раунде не сработает
+                dead.Respawn(dead.GlobalPosition, 0.35f);
+                GrantInvulnerability(dead);
+                return;
+            }
+
+            // «Проклятый Амулет»: взрыв при настоящей смерти — урон сопернику вблизи.
+            if (dead != null && GodotObject.IsInstanceValid(dead) && dead.OnDeathExplosion)
+                ExplodeOnDeath(dead, playerId);
+
             _lives[playerId] = Mathf.Max(0, _lives[playerId] - 1);
             _hud?.SetLives(playerId, _lives[playerId]);
 
@@ -264,6 +281,15 @@ namespace ChaosArena.scenes
             // Пауза 3 сек, затем возрождение в случайном краю.
             var timer = GetTree().CreateTimer(RespawnDelay);
             timer.Timeout += () => { if (!_duelOver) RespawnPlayer(playerId); };
+        }
+
+        // Взрыв при смерти: 45 урона сопернику в радиусе 120px.
+        private void ExplodeOnDeath(Node2D deadPlayer, int deadId)
+        {
+            var foe = _players[1 - deadId];
+            if (foe == null || !GodotObject.IsInstanceValid(foe) || foe.IsDead) return;
+            if (deadPlayer.GlobalPosition.DistanceTo(foe.GlobalPosition) <= 120f)
+                foe.TakeDamage(45f);
         }
 
         private void RespawnPlayer(int id)

@@ -58,6 +58,16 @@ namespace ChaosArena.entities.enemies
                 Die();
         }
 
+        /// <summary>
+        /// Усиление врага (саботаж «Проклятие Великана»): множит HP и размер.
+        /// </summary>
+        public void Empower(float hpMultiplier, float scaleMultiplier)
+        {
+            MaxHealth *= hpMultiplier;
+            CurrentHealth *= hpMultiplier;
+            Scale *= scaleMultiplier;
+        }
+
         private void Die()
         {
             if (IsDead) return;

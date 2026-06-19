@@ -32,7 +32,25 @@ namespace ChaosArena.entities.player
         /// <summary>Заряды щита-бонуса: каждый поглощает один источник урона целиком.</summary>
         public int ShieldCharges { get; set; } = 0;
 
-        // Базовое макс. HP (без бонусов Оракула) — чтобы корректно сбрасывать эффекты.
+        // --- Постоянные модификаторы (Камбэк / Дар Отчаяния) ---
+        // Переживают ReapplyTo Оракула: множители Оракула стакаются ПОВЕРХ этих баз.
+        public float BaseDamageMultiplier { get; set; } = 1f;
+        public float BaseSpeedMultiplier { get; set; } = 1f;
+        public float BaseGoldMultiplier { get; set; } = 1f;
+        public float BonusMaxHealth { get; set; } = 0f;
+
+        // --- Флаги Камбэка ---
+        public bool ReviveOnce { get; set; } = false;        // возрождение 1 раз в PvP
+        public bool OnDeathExplosion { get; set; } = false;  // взрыв при смерти (45 урона r=120)
+        public int HealOnKill { get; set; } = 0;             // +HP за убийство моба в PvE
+        public float AutoAimPercent { get; set; } = 0f;      // доводка прицела к цели
+        public bool EchoShot { get; set; } = false;          // дубль выстрела под 15°
+
+        // --- Транзиентные флаги Саботажа (самоснимаются по таймеру) ---
+        public bool IsStunned { get; set; } = false;         // оглушение — нельзя двигаться
+        public bool IceFloor { get; set; } = false;          // скользкий пол — инерция движения
+
+        // Базовое макс. HP (без бонусов Оракула/Камбэка) — чтобы корректно сбрасывать эффекты.
         private float _baseMaxHealth;
 
         // Два слота оружия: 0 = фарм (PvE), 1 = дуэль (PvP)
@@ -49,7 +67,9 @@ namespace ChaosArena.entities.player
 
             OnReady();
 
-            // Игрок мог переспавниться в новой фазе — подтягиваем активные эффекты Оракула.
+            // Подтягиваем персистентные эффекты. Сначала Камбэк (ставит базовые
+            // множители/BonusMaxHealth), затем Оракул (стакается поверх баз).
+            GetNodeOrNull<ComebackSystem>("/root/ComebackSystem")?.ReapplyTo(this);
             GetNodeOrNull<OracleSystem>("/root/OracleSystem")?.ReapplyTo(this);
         }
 
@@ -110,14 +130,15 @@ namespace ChaosArena.entities.player
         /// </summary>
         public void ResetOracleEffects()
         {
-            DamageMultiplier = 1f;
+            // Сброс к базам Камбэка (а не к 1) — иначе Оракул затирал бы бонусы Камбэка.
+            DamageMultiplier = BaseDamageMultiplier;
             DamageReceivedMultiplier = 1f;
-            SpeedMultiplier = 1f;
+            SpeedMultiplier = BaseSpeedMultiplier;
             VampirismPercent = 0f;
-            GoldMultiplier = 1f;
+            GoldMultiplier = BaseGoldMultiplier;
             FireBullets = false;
             InvertControls = false;
-            MaxHealth = _baseMaxHealth;
+            MaxHealth = _baseMaxHealth + BonusMaxHealth;
             Modulate = Colors.White;
         }
 
@@ -135,7 +156,7 @@ namespace ChaosArena.entities.player
         /// подтягивает эффекты Оракула (могут менять MaxHealth) и лечит до полного HP.
         /// Неуязвимость после спавна выставляет вызывающая сторона (PvP-арена).
         /// </summary>
-        public void Respawn(Vector2 globalPosition)
+        public void Respawn(Vector2 globalPosition, float healthFraction = 1f)
         {
             IsDead = false;
             GlobalPosition = globalPosition;
@@ -143,8 +164,9 @@ namespace ChaosArena.entities.player
             SetProcess(true);
             SetPhysicsProcess(true);
 
+            GetNodeOrNull<ComebackSystem>("/root/ComebackSystem")?.ReapplyTo(this);
             GetNodeOrNull<OracleSystem>("/root/OracleSystem")?.ReapplyTo(this);
-            CurrentHealth = MaxHealth;
+            CurrentHealth = Mathf.Clamp(MaxHealth * healthFraction, 1f, MaxHealth);
             _eventBus.EmitSignal(EventBus.SignalName.PlayerHealthChanged, PlayerId, CurrentHealth);
         }
 
@@ -171,6 +193,24 @@ namespace ChaosArena.entities.player
                 if (ticksLeft <= 0) timer.QueueFree();
             };
             timer.Start();
+        }
+
+        /// <summary>Оглушение (саботаж): на время блокирует движение игрока.</summary>
+        public void Stun(float seconds)
+        {
+            if (IsDead || seconds <= 0f) return;
+            IsStunned = true;
+            var timer = GetTree().CreateTimer(seconds);
+            timer.Timeout += () => { if (GodotObject.IsInstanceValid(this)) IsStunned = false; };
+        }
+
+        /// <summary>Скользкий пол (саботаж «Ледяной Пол»): инерция движения на время.</summary>
+        public void MakeSlippery(float seconds)
+        {
+            if (seconds <= 0f) return;
+            IceFloor = true;
+            var timer = GetTree().CreateTimer(seconds);
+            timer.Timeout += () => { if (GodotObject.IsInstanceValid(this)) IceFloor = false; };
         }
 
         private void Die()

@@ -35,6 +35,7 @@ namespace ChaosArena.ui
         private Button _tabWeapons, _tabItems, _tabSabotage;
 
         private ShopSystem _shop;
+        private SabotageSystem _sabotage;
         private EconomyManager _economy;
         private EventBus _eventBus;
         private GameManager _gameManager;
@@ -54,6 +55,7 @@ namespace ChaosArena.ui
             _tabSabotage = GetNode<Button>("Root/Panel/Tabs/TabSabotage");
 
             _shop = GetNode<ShopSystem>("/root/ShopSystem");
+            _sabotage = GetNode<SabotageSystem>("/root/SabotageSystem");
             _economy = GetNode<EconomyManager>("/root/EconomyManager");
             _gameManager = GetNode<GameManager>("/root/GameManager");
             _eventBus = GetNode<EventBus>("/root/EventBus");
@@ -123,6 +125,14 @@ namespace ChaosArena.ui
                 child.QueueFree();
             }
 
+            // Вкладка САБОТАЖ показывает все 12 саботажей из SabotageSystem (не из набора).
+            if (_activeTab == Tab.Sabotage)
+            {
+                foreach (var sab in _sabotage.All)
+                    _itemsGrid.AddChild(BuildSabotageCell(sab));
+                return;
+            }
+
             var offer = _shop.GetOffer(_playerId, _gameManager.CurrentRound);
             var shown = offer.FindAll(InActiveTab);
 
@@ -140,6 +150,71 @@ namespace ChaosArena.ui
 
             foreach (var item in shown)
                 _itemsGrid.AddChild(BuildCell(item));
+        }
+
+        // Ячейка саботажа: иконка/название/цена/КУПИТЬ. Покупка через SabotageSystem
+        // (1 саботаж за раунд — после покупки кнопки во вкладке блокируются).
+        private Control BuildSabotageCell(SabotageData sab)
+        {
+            var cell = new Control { CustomMinimumSize = new Vector2(210, 150) };
+
+            cell.AddChild(new TextureRect
+            {
+                Texture = SlotTex,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.Scale,
+                Position = Vector2.Zero,
+                Size = new Vector2(210, 150),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+
+            cell.AddChild(new TextureRect
+            {
+                Texture = GD.Load<Texture2D>(sab.IconPath),
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                Position = new Vector2(81, 8),
+                Size = new Vector2(48, 48),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+
+            var name = new Label
+            {
+                Text = sab.Name,
+                Position = new Vector2(6, 58),
+                Size = new Vector2(198, 32),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                TooltipText = sab.Description,
+            };
+            name.AddThemeFontSizeOverride("font_size", 12);
+            name.AddThemeColorOverride("font_color", Gold);
+            cell.AddChild(name);
+
+            var price = new Label
+            {
+                Text = $"{sab.Price}g",
+                Position = new Vector2(6, 92),
+                Size = new Vector2(198, 18),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            price.AddThemeFontSizeOverride("font_size", 12);
+            cell.AddChild(price);
+
+            bool affordable = _economy.GetBalance(_playerId) >= sab.Price && _sabotage.CanBuy(_playerId);
+            var buy = MakeImageButton(BuyTex, new Vector2(61, 114), affordable);
+            buy.Pressed += () => OnBuySabotage(sab.Id);
+            cell.AddChild(buy);
+
+            return cell;
+        }
+
+        private void OnBuySabotage(string sabotageId)
+        {
+            if (_sabotage.Buy(_playerId, sabotageId))
+                RefreshItems(); // баланс обновится через CurrencyChanged
         }
 
         // Строит ячейку товара: фон-слот, иконка, название, цена, КУПИТЬ/ПРОДАТЬ.
